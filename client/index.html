@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vanguard Rebooted</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="scene"></canvas>
+      <div id="labels"></div>
+
+      <div id="hud">
+        <div id="status">Connecting…</div>
+        <div id="help">WASD move · drag mouse to rotate camera · scroll to zoom · Enter to chat</div>
+      </div>
+
+      <div id="chat">
+        <div id="chat-log"></div>
+        <input id="chat-input" type="text" placeholder="Press Enter to chat…" maxlength="240" />
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
