@@ -1,6 +1,6 @@
 // Tracks keyboard + mouse-drag state. Pauses movement keys while the chat input is focused.
 
-export const keys = { forward: false, back: false, left: false, right: false };
+export const keys = { forward: false, back: false, left: false, right: false, sprint: false };
 
 export const mouse = {
   dragging: false,
@@ -55,16 +55,22 @@ export function initInput(canvas) {
       e.preventDefault();
       inventoryToggle.requested = true;
     }
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
+      keys.sprint = true;
+    }
   });
 
   window.addEventListener("keyup", (e) => {
     const action = KEY_MAP[e.code];
     if (action) keys[action] = false;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
+      keys.sprint = false;
+    }
   });
 
   // Clear movement if the window loses focus (avoids "stuck key" bugs).
   window.addEventListener("blur", () => {
-    keys.forward = keys.back = keys.left = keys.right = false;
+    keys.forward = keys.back = keys.left = keys.right = keys.sprint = false;
   });
 
   canvas.addEventListener("mousedown", (e) => {

@@ -20,7 +20,8 @@ a full game.
   reached on foot past a pair of stone gateway pillars
 - Multiplayer: see other connected players move around in real time
 - Third-person camera you orbit with the mouse and zoom with the scroll wheel
-- WASD (or arrow key) movement, camera-relative
+- WASD (or arrow key) movement, camera-relative, with a real walk/run gait —
+  hold `Shift` to sprint — instead of a static shape sliding across the ground
 - Global text chat
 - Name tags floating above each character
 - Health bars floating above each character and mob
@@ -102,6 +103,7 @@ VITE_SERVER_URL=http://192.168.1.23:3000
 | Input                  | Action                          |
 |-------------------------|----------------------------------|
 | `W` / `A` / `S` / `D`   | Move (camera-relative)          |
+| `Shift` (hold)          | Sprint                            |
 | Mouse drag              | Orbit camera around your character |
 | Scroll wheel            | Zoom camera in/out               |
 | Click (no drag) / `F` / `Space` | Melee attack (cooldown applies) |
