@@ -1,6 +1,13 @@
 import * as THREE from "three";
 import { buildWorld } from "./world.js";
-import { createCharacterMesh, applyEquipment, RemotePlayer, triggerAttack, updateAttack } from "./player.js";
+import {
+  createCharacterMesh,
+  applyEquipment,
+  RemotePlayer,
+  triggerAttack,
+  updateAttack,
+  updateLocomotion,
+} from "./player.js";
 import { Mob } from "./mob.js";
 import { Pickup } from "./pickup.js";
 import { initInput, keys, mouse, attack as attackInput, inventoryToggle } from "./input.js";
@@ -21,6 +28,7 @@ const inventoryGridEl = document.getElementById("inventory-grid");
 const INVENTORY_SLOT_COUNT = 20; // must match server's MAX_INVENTORY_SLOTS
 
 const ATTACK_COOLDOWN = 0.6; // seconds between local attacks
+const SPRINT_MULTIPLIER = 1.8; // hold Shift (input.js's keys.sprint) to move+animate this much faster
 const MOB_ATTACK_RANGE = 3.2; // must match server's MOB_ATTACK_RANGE
 const MOB_ATTACK_FACING_DOT = 0.3; // mob must be roughly in front of the player to be targeted
 
@@ -523,8 +531,11 @@ function updateLocalPlayer(dt) {
   if (keys.right) _move.add(_right);
   if (keys.left) _move.sub(_right);
 
-  if (_move.lengthSq() > 0) {
-    _move.normalize().multiplyScalar(local.moveSpeed * dt);
+  const moving = _move.lengthSq() > 0;
+  const effectiveSpeed = local.moveSpeed * (keys.sprint ? SPRINT_MULTIPLIER : 1);
+
+  if (moving) {
+    _move.normalize().multiplyScalar(effectiveSpeed * dt);
     local.mesh.position.x = THREE.MathUtils.clamp(local.mesh.position.x + _move.x, -WORLD_BOUNDS, WORLD_BOUNDS);
     local.mesh.position.z = THREE.MathUtils.clamp(local.mesh.position.z + _move.z, -WORLD_BOUNDS, WORLD_BOUNDS);
 
@@ -533,6 +544,11 @@ function updateLocalPlayer(dt) {
     dr = Math.atan2(Math.sin(dr), Math.cos(dr));
     local.mesh.rotation.y += dr * Math.min(1, dt * 12);
   }
+
+  // Walk/run gait is purely speed-driven (see updateLocomotion in player.js),
+  // so sprinting just means feeding it a bigger number here — no separate
+  // "running" flag to track or send over the network.
+  updateLocomotion(local.mesh, dt, moving ? effectiveSpeed : 0);
 
   // Camera orbits around the player at head height.
   const eyeHeight = 1.5;

@@ -7,6 +7,27 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Walk/run character animation instead of a static primitive-shape sliding
+  around: `client/src/player.js`'s character mesh now has hinged leg pivots
+  (hip-mounted capsules, previously just one floor-to-head torso capsule with
+  no legs at all) and a second, unarmed left-arm pivot alongside the existing
+  weapon arm, animated by a new `updateLocomotion()` function into an
+  alternating walk cycle (each arm counter-swings opposite its same-side leg).
+  Both stride frequency and amplitude scale continuously with how fast the
+  character is actually moving — there's no separate "is running" flag sent
+  over the network; holding **Shift now sprints** (`SPRINT_MULTIPLIER` = 1.8x
+  move speed in `client/src/main.js`, tracked as `keys.sprint` in
+  `client/src/input.js`) and every client, including remote ones (whose speed
+  is inferred from position deltas in `RemotePlayer.update()`), naturally
+  animates a faster/wider gait to match. The existing melee-swing attack
+  animation (`triggerAttack`/`updateAttack`) takes priority over the gait on
+  the weapon arm while a swing is in progress, so attacking while moving
+  doesn't look broken. Equippable gear (weapon/helmet/chestplate) still
+  layers on top unchanged. Torso proportions were shortened/raised slightly
+  to make room for the new visible legs. Server-side movement/speed
+  validation is unaffected (still absent — see the "basic anti-cheat" item in
+  `ROADMAP.md`, which will need to account for the new sprint speed cap when
+  it's built).
 - Basic account/login instead of a random guest name each session: the login
   screen now collects a username *and* password, backed by a new
   dependency-free `server/accountStore.js` (Node's built-in `crypto.scrypt`
