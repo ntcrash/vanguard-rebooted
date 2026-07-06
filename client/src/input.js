@@ -10,6 +10,10 @@ export const mouse = {
   wheel: 0, // accumulated scroll since last read
 };
 
+// Edge-triggered attack request: set true on a left-click or the attack
+// keybind, and cleared by main.js once it's been consumed for a frame.
+export const attack = { requested: false };
+
 function chatFocused() {
   return document.activeElement && document.activeElement.id === "chat-input";
 }
@@ -25,11 +29,24 @@ const KEY_MAP = {
   ArrowRight: "right",
 };
 
+// A "click" (as opposed to a camera-drag) is a left mouse press that's
+// released quickly and without much movement.
+const CLICK_MOVE_THRESHOLD = 6; // px
+const CLICK_TIME_THRESHOLD = 300; // ms
+
 export function initInput(canvas) {
+  let downX = 0;
+  let downY = 0;
+  let downAt = 0;
+
   window.addEventListener("keydown", (e) => {
     if (chatFocused()) return;
     const action = KEY_MAP[e.code];
     if (action) keys[action] = true;
+    if (e.code === "Space" || e.code === "KeyF") {
+      e.preventDefault();
+      attack.requested = true;
+    }
   });
 
   window.addEventListener("keyup", (e) => {
@@ -46,9 +63,17 @@ export function initInput(canvas) {
     mouse.dragging = true;
     mouse.lastX = e.clientX;
     mouse.lastY = e.clientY;
+    downX = e.clientX;
+    downY = e.clientY;
+    downAt = performance.now();
   });
-  window.addEventListener("mouseup", () => {
+  window.addEventListener("mouseup", (e) => {
     mouse.dragging = false;
+    const moved = Math.hypot(e.clientX - downX, e.clientY - downY);
+    const elapsed = performance.now() - downAt;
+    if (e.button === 0 && moved < CLICK_MOVE_THRESHOLD && elapsed < CLICK_TIME_THRESHOLD) {
+      attack.requested = true;
+    }
   });
   window.addEventListener("mousemove", (e) => {
     if (!mouse.dragging) return;

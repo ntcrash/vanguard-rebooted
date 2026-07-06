@@ -3,6 +3,17 @@
 All notable changes to this project are documented in this file.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- Basic melee attack: left-click (a quick click, not a camera drag) or the `F`/
+  `Space` keybind triggers a weapon swing animation with a client-enforced
+  cooldown and a HUD cooldown bar.
+- Attack events are synced over Socket.io (`attack` / `playerAttacked`) so
+  other connected players see your swing animation in real time.
+- Server-side cooldown enforcement on the `attack` event to prevent spam/cheating.
+
 ## [0.1.0] - 2026-07-05
 
 ### Added
