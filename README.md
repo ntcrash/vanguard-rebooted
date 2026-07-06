@@ -55,6 +55,11 @@ a full game.
   or teleport around the map — an implausible move is dropped and the
   player's client is snapped back in sync, generously tolerant of ordinary
   lag so normal play is never affected.
+- Mobile/touch controls: on a touchscreen (detected via a `(pointer: coarse)`
+  media query, so desktop mouse+keyboard play is unaffected), an on-screen
+  virtual joystick drives movement, a single-finger drag anywhere else on the
+  scene orbits the camera exactly like a mouse drag, and dedicated Sprint/
+  Attack/Inventory buttons cover the rest of the keyboard shortcuts
 
 Accounts are stored alongside player saves in `server/data/accounts.json`
 (gitignored, password hashes only — never plaintext).
@@ -119,6 +124,11 @@ Deploying this somewhere other players can reach it? See
 | `I`                     | Toggle inventory panel           |
 | `Enter`                 | Focus chat box / send message    |
 | `Esc`                   | Clear & unfocus chat box          |
+
+On a touchscreen, a virtual joystick (bottom-left) replaces WASD, and a
+Sprint/Attack/Inventory button stack (bottom-right) replaces `Shift`/click-
+or-`F`/`I`. Dragging a finger anywhere else on the scene orbits the camera,
+same as a mouse drag.
 
 ## Development notes
 

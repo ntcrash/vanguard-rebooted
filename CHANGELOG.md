@@ -7,6 +7,27 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Mobile/touch controls: a virtual joystick (`#touch-joystick-base`/`-knob`)
+  drives movement by converting finger offset from the base's center into
+  the same `forward`/`back`/`left`/`right` booleans WASD already produces
+  (`joystickVectorToKeys()` in `client/src/input.js`), with a deadzone so
+  small jitter near center doesn't register and the offset clamped to a max
+  radius (`clampToRadius()`) so the visual knob can't travel further than the
+  base; diagonal joystick positions naturally set two direction flags at
+  once, same as pressing two WASD keys together. A single-finger drag
+  anywhere else on the canvas orbits the camera using the exact same
+  azimuth/elevation math as the existing mouse-drag handler, tracked by
+  touch identifier so it doesn't conflict with the joystick or button
+  touches. Three new round buttons (Sprint/hold, Attack/tap, Inventory/tap)
+  cover the remaining keyboard shortcuts (`Shift`, click-or-`F`, `I`). The
+  whole control overlay (`#touch-controls` in `client/index.html`) is hidden
+  by default and only shown via a `@media (pointer: coarse)` CSS rule, so
+  desktop mouse+keyboard play is completely unaffected. Verified the pure
+  joystick math (`clampToRadius`, `joystickVectorToKeys`) with a standalone
+  Node script covering centered/within-radius/clamped/diagonal/deadzone
+  cases, since touch events can't be simulated without a real browser in
+  this sandbox; also checked HTML tag balance and CSS brace balance after
+  the markup/stylesheet edits.
 - Basic anti-cheat / server-side movement validation: the `move` handler in
   `server/index.js` now rejects a position update that covers more ground
   than the fastest legitimate client could have traveled since its last

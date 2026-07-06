@@ -18,6 +18,33 @@ export const attack = { requested: false };
 // and cleared by main.js once it's been consumed for a frame.
 export const inventoryToggle = { requested: false };
 
+// On-screen movement joystick tuning, in px of finger travel from the base's
+// center. Exported as pure helpers (no DOM) so the direction/clamping math
+// can be unit tested without a browser.
+export const JOYSTICK_DEADZONE = 16;
+export const JOYSTICK_RADIUS = 50;
+
+// Clamps a (dx, dy) offset to a maximum radius, preserving direction.
+export function clampToRadius(dx, dy, radius) {
+  const dist = Math.hypot(dx, dy);
+  if (dist <= radius || dist === 0) return { x: dx, y: dy };
+  const scale = radius / dist;
+  return { x: dx * scale, y: dy * scale };
+}
+
+// Converts a joystick offset into the same forward/back/left/right booleans
+// keyboard input produces, so movement code doesn't need to know the input
+// came from a touch joystick vs. WASD. Diagonal offsets naturally set two
+// flags at once, same as pressing two keys together.
+export function joystickVectorToKeys(dx, dy, deadzone) {
+  return {
+    forward: dy < -deadzone,
+    back: dy > deadzone,
+    left: dx < -deadzone,
+    right: dx > deadzone,
+  };
+}
+
 function chatFocused() {
   return document.activeElement && document.activeElement.id === "chat-input";
 }
@@ -107,4 +134,149 @@ export function initInput(canvas) {
     },
     { passive: false }
   );
+
+  setupTouchControls(canvas);
+}
+
+// Mobile/touch controls: a virtual joystick for movement, tap-and-hold
+// buttons for sprint/attack/inventory, and single-finger drag-anywhere on
+// the canvas for camera rotation (mirroring the mouse-drag behavior above).
+// All of it feeds the same shared `keys`/`mouse`/`attack`/`inventoryToggle`
+// state, so main.js's movement/attack/inventory logic doesn't need to know
+// whether the input came from a keyboard/mouse or a touchscreen. No-ops
+// gracefully if the touch-control DOM elements aren't present.
+function setupTouchControls(canvas) {
+  const joystickBase = document.getElementById("touch-joystick-base");
+  const joystickKnob = document.getElementById("touch-joystick-knob");
+  const sprintBtn = document.getElementById("touch-sprint-btn");
+  const attackBtn = document.getElementById("touch-attack-btn");
+  const inventoryBtn = document.getElementById("touch-inventory-btn");
+
+  let joystickTouchId = null;
+  let joystickCenterX = 0;
+  let joystickCenterY = 0;
+
+  function resetJoystick() {
+    keys.forward = keys.back = keys.left = keys.right = false;
+    if (joystickKnob) joystickKnob.style.transform = "translate(0px, 0px)";
+  }
+
+  if (joystickBase) {
+    joystickBase.addEventListener(
+      "touchstart",
+      (e) => {
+        if (joystickTouchId !== null) return;
+        const touch = e.changedTouches[0];
+        const rect = joystickBase.getBoundingClientRect();
+        joystickCenterX = rect.left + rect.width / 2;
+        joystickCenterY = rect.top + rect.height / 2;
+        joystickTouchId = touch.identifier;
+        e.preventDefault();
+      },
+      { passive: false }
+    );
+
+    window.addEventListener(
+      "touchmove",
+      (e) => {
+        if (joystickTouchId === null) return;
+        const touch = Array.from(e.changedTouches).find((t) => t.identifier === joystickTouchId);
+        if (!touch) return;
+        e.preventDefault();
+        const raw = { x: touch.clientX - joystickCenterX, y: touch.clientY - joystickCenterY };
+        const clamped = clampToRadius(raw.x, raw.y, JOYSTICK_RADIUS);
+        if (joystickKnob) joystickKnob.style.transform = `translate(${clamped.x}px, ${clamped.y}px)`;
+        const dirKeys = joystickVectorToKeys(clamped.x, clamped.y, JOYSTICK_DEADZONE);
+        keys.forward = dirKeys.forward;
+        keys.back = dirKeys.back;
+        keys.left = dirKeys.left;
+        keys.right = dirKeys.right;
+      },
+      { passive: false }
+    );
+
+    const endJoystickTouch = (e) => {
+      if (joystickTouchId === null) return;
+      const touch = Array.from(e.changedTouches).find((t) => t.identifier === joystickTouchId);
+      if (!touch) return;
+      joystickTouchId = null;
+      resetJoystick();
+    };
+    window.addEventListener("touchend", endJoystickTouch);
+    window.addEventListener("touchcancel", endJoystickTouch);
+  }
+
+  if (sprintBtn) {
+    const setSprint = (on) => (e) => {
+      e.preventDefault();
+      keys.sprint = on;
+      sprintBtn.classList.toggle("active", on);
+    };
+    sprintBtn.addEventListener("touchstart", setSprint(true), { passive: false });
+    sprintBtn.addEventListener("touchend", setSprint(false));
+    sprintBtn.addEventListener("touchcancel", setSprint(false));
+  }
+
+  if (attackBtn) {
+    attackBtn.addEventListener(
+      "touchstart",
+      (e) => {
+        e.preventDefault();
+        attack.requested = true;
+      },
+      { passive: false }
+    );
+  }
+
+  if (inventoryBtn) {
+    inventoryBtn.addEventListener(
+      "touchstart",
+      (e) => {
+        e.preventDefault();
+        inventoryToggle.requested = true;
+      },
+      { passive: false }
+    );
+  }
+
+  // Single-finger drag anywhere else on the canvas rotates the camera,
+  // same math as the mousemove handler above, tracked by touch identifier
+  // so it doesn't fight with the joystick/button touches.
+  let cameraTouchId = null;
+  canvas.addEventListener(
+    "touchstart",
+    (e) => {
+      if (cameraTouchId !== null) return;
+      const touch = e.changedTouches[0];
+      cameraTouchId = touch.identifier;
+      mouse.dragging = true;
+      mouse.lastX = touch.clientX;
+      mouse.lastY = touch.clientY;
+    },
+    { passive: true }
+  );
+  canvas.addEventListener(
+    "touchmove",
+    (e) => {
+      if (cameraTouchId === null) return;
+      const touch = Array.from(e.changedTouches).find((t) => t.identifier === cameraTouchId);
+      if (!touch) return;
+      const dx = touch.clientX - mouse.lastX;
+      const dy = touch.clientY - mouse.lastY;
+      mouse.lastX = touch.clientX;
+      mouse.lastY = touch.clientY;
+      mouse.deltaAzimuth -= dx * 0.005;
+      mouse.deltaElevation -= dy * 0.005;
+    },
+    { passive: true }
+  );
+  const endCameraTouch = (e) => {
+    if (cameraTouchId === null) return;
+    const touch = Array.from(e.changedTouches).find((t) => t.identifier === cameraTouchId);
+    if (!touch) return;
+    cameraTouchId = null;
+    mouse.dragging = false;
+  };
+  canvas.addEventListener("touchend", endCameraTouch);
+  canvas.addEventListener("touchcancel", endCameraTouch);
 }
