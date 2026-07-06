@@ -35,6 +35,8 @@ export function buildWorld(scene) {
   scene.add(grid);
 
   scatterProps(scene);
+  scatterForest(scene);
+  buildForestGateway(scene);
 
   return { ground };
 }
@@ -77,6 +79,64 @@ function scatterProps(scene) {
       rock.receiveShadow = true;
       scene.add(rock);
     }
+  }
+}
+
+// The "Whispering Forest" — a second outdoor area north of the meadow
+// (z > 90ish), reached on foot rather than via a teleport/instance. A denser
+// cluster of taller, darker pines plus a tinted ground patch make it read as
+// a distinct zone even though it's part of the same continuous plane as the
+// meadow (see FOREST_ZONE_Z in client/src/main.js and server/index.js).
+function scatterForest(scene) {
+  // A translucent dark-green overlay over the forest footprint, sitting just
+  // above the base ground so it reads as shadowed woodland floor without
+  // needing a second physical ground mesh or per-zone fog changes.
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(200, 100),
+    new THREE.MeshStandardMaterial({ color: 0x1c3a22, roughness: 1, transparent: true, opacity: 0.55 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(0, 0.02, 130);
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  const trunkGeo = new THREE.CylinderGeometry(0.28, 0.4, 3.2, 6);
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3c2a1a });
+  const leavesGeo = new THREE.ConeGeometry(1.4, 4.6, 8);
+  const leavesMat = new THREE.MeshStandardMaterial({ color: 0x18401f });
+
+  const rng = mulberry32(9001); // different seed than the meadow's props, but still deterministic
+
+  for (let i = 0; i < 70; i++) {
+    const x = (rng() - 0.5) * 180;
+    const z = 95 + rng() * 75;
+
+    const tree = new THREE.Group();
+    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+    trunk.position.y = 1.6;
+    trunk.castShadow = true;
+    const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+    leaves.position.y = 4.3;
+    leaves.castShadow = true;
+    tree.add(trunk, leaves);
+    tree.position.set(x, 0, z);
+    tree.scale.setScalar(0.8 + rng() * 0.6);
+    scene.add(tree);
+  }
+}
+
+// A pair of simple stone pillars flanking the meadow/forest boundary so
+// players can see where one zone ends and the other begins.
+function buildForestGateway(scene) {
+  const postGeo = new THREE.CylinderGeometry(0.7, 0.85, 4.5, 8);
+  const postMat = new THREE.MeshStandardMaterial({ color: 0x8a8a8a, roughness: 0.85 });
+
+  for (const x of [-9, 9]) {
+    const post = new THREE.Mesh(postGeo, postMat);
+    post.position.set(x, 2.25, 90);
+    post.castShadow = true;
+    post.receiveShadow = true;
+    scene.add(post);
   }
 }
 

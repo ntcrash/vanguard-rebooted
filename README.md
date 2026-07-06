@@ -11,7 +11,9 @@ a full game.
 ## Features
 
 - Character creation screen: pick a name and color before joining the world
-- 3D outdoor world (ground, trees, rocks, lighting/shadows, sky/fog)
+- 3D outdoor world (ground, trees, rocks, lighting/shadows, sky/fog) spanning two
+  distinct zones — the starting Meadow and the Whispering Forest to the north,
+  reached on foot past a pair of stone gateway pillars
 - Multiplayer: see other connected players move around in real time
 - Third-person camera you orbit with the mouse and zoom with the scroll wheel
 - WASD (or arrow key) movement, camera-relative
@@ -27,8 +29,9 @@ a full game.
 - Item pickups: glowing gems scattered around the world (health draughts,
   gold coins) that are automatically looted into your inventory when you
   walk over them, and respawn after a short delay
-- Mob NPCs: wandering boars scattered around the world that can be attacked and
-  defeated (auto-targeted when one's in range and roughly in front of you)
+- Mob NPCs: wandering boars in the Meadow and wolves in the Whispering Forest,
+  scattered around the world, that can be attacked and defeated (auto-targeted
+  when one's in range and roughly in front of you)
 - XP/leveling: defeating mobs earns XP toward your next level, shown as a
   level + XP bar in the HUD; leveling up fully heals you and raises your max HP
 - Floating damage numbers pop up whenever a mob takes a hit

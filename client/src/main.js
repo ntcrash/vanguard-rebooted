@@ -11,6 +11,7 @@ import { initCharacterCreate } from "./characterCreate.js";
 
 const canvas = document.getElementById("scene");
 const statusEl = document.getElementById("status");
+const zoneLabelEl = document.getElementById("zone-label");
 const labelsEl = document.getElementById("labels");
 const cooldownFillEl = document.getElementById("attack-cooldown-fill");
 const levelDisplayEl = document.getElementById("level-display");
@@ -466,9 +467,23 @@ const _healthPos = new THREE.Vector3();
 const _dmgPos = new THREE.Vector3();
 const _screen = new THREE.Vector3();
 
-const WORLD_BOUNDS = 90;
+const WORLD_BOUNDS = 170; // must match server's WORLD_BOUNDS
+const FOREST_ZONE_Z = 90; // must match server's FOREST_ZONE_Z
 let lastSendAt = 0;
 let lastSent = { x: null, y: null, z: null, rotY: null };
+let currentZoneName = null; // last zone name shown in the HUD, so we only touch the DOM on change
+
+/** Updates the "Meadow" / "Whispering Forest" HUD label from the local
+ * player's current z position. Purely cosmetic client-side zone detection —
+ * both areas share the same continuous world/network state. */
+function updateZoneLabel() {
+  if (!zoneLabelEl || !local.mesh) return;
+  const zoneName = local.mesh.position.z >= FOREST_ZONE_Z ? "Whispering Forest" : "Meadow";
+  if (zoneName === currentZoneName) return;
+  currentZoneName = zoneName;
+  zoneLabelEl.textContent = zoneName;
+  zoneLabelEl.classList.toggle("forest", zoneName === "Whispering Forest");
+}
 
 function updateCameraOrbit(dt) {
   cameraState.azimuth += mouse.deltaAzimuth;
@@ -636,6 +651,7 @@ function animate() {
   updateLocalPlayer(dt);
   updateLocalAttack(dt);
   updateInventoryToggle();
+  updateZoneLabel();
 
   for (const rp of remotePlayers.values()) rp.update(dt);
   for (const mob of mobs.values()) mob.update(dt);

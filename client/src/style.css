@@ -82,6 +82,23 @@ html, body {
   font-weight: 600;
 }
 
+#zone-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 3px;
+  color: #b6e6a8;
+}
+
+#zone-label.forest {
+  color: #6fae5a;
+}
+
+#zone-label:empty {
+  display: none;
+}
+
 #help {
   font-size: 12px;
   opacity: 0.75;

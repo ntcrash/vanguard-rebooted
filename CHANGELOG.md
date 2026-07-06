@@ -7,6 +7,23 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Larger, zoned world: the map now spans two distinct outdoor areas on one
+  continuous plane — the original Meadow and a new Whispering Forest to the
+  north (`FOREST_ZONE_Z` = 90 on both server and client), reached on foot
+  rather than via a teleport/instance, so no new networking/room logic was
+  needed. `WORLD_BOUNDS` (the player movement clamp) grew from 90 to 170 to
+  fit the new area. The forest has its own denser, darker pine treeline and a
+  tinted ground overlay (`scatterForest()` in `client/src/world.js`), flanked
+  by a pair of stone gateway pillars at the boundary, plus a HUD zone label
+  that switches between "Meadow" and "Whispering Forest" as you cross it
+  (`updateZoneLabel()` in `client/src/main.js`). Five wolf mobs (Grey Wolf,
+  Timber Wolf, Dire Wolf, Lone Wolf, Alpha Wolf) spawn in the forest using the
+  same wandering/combat/respawn logic as the meadow's boars, just re-tinted
+  grey (`client/src/mob.js`); `MOB_SPAWNS` entries now carry their own `name`
+  directly instead of indexing into a shared `MOB_NAMES` array. New forest
+  item pickups include a fresh curio item, Moonpetal (no gameplay effect yet),
+  alongside more health draughts/gold coins.
+
 - Basic XP/leveling tied to defeating mobs: players now have `level`, `xp`,
   and `xpToNext` fields (`server/index.js`), starting at level 1. Defeating a
   mob awards flat XP (`MOB_XP_REWARD` = 25) via a new `awardXp()` helper,

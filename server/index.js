@@ -6,7 +6,14 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 
 const PORT = process.env.PORT || 3000;
-const WORLD_BOUNDS = 90; // players are clamped to +/- this on X/Z
+const WORLD_BOUNDS = 170; // players are clamped to +/- this on X/Z
+// The map is one continuous plane split into two visually/thematically
+// distinct outdoor areas: the original "Meadow" (roughly z < FOREST_ZONE_Z)
+// and the new "Whispering Forest" beyond it, reachable by walking north.
+// This keeps zone transitions simple (no teleport/instance/room logic
+// needed) while still giving the world a second real area with its own
+// mobs, pickups, and look (see client/src/world.js's scatterForest()).
+const FOREST_ZONE_Z = 90; // z at/after which a player is considered "in the forest"
 const ATTACK_COOLDOWN_MS = 550; // slightly under the client's 600ms to allow for latency jitter
 const PLAYER_RESPAWN_MS = 5000; // delay before a defeated player returns to the world
 
@@ -26,6 +33,9 @@ const ITEM_DEFS = {
   "steel-sword": { name: "Steel Sword", icon: "🗡️", slot: "weapon" },
   "iron-helm": { name: "Iron Helm", icon: "⛑️", slot: "head" },
   "leather-armor": { name: "Leather Armor", icon: "🥋", slot: "body" },
+  // Forest-only curio -- no gameplay effect yet, just a reason to explore
+  // the new zone and something for a future crafting/quest system to use.
+  "moonpetal": { name: "Moonpetal", icon: "🌙" },
 };
 const EQUIPMENT_SLOTS = ["weapon", "head", "body"];
 
@@ -68,6 +78,13 @@ const PICKUP_SPAWNS = [
   { x: 80, z: 0, itemId: "iron-helm", qty: 1 },
   { x: -80, z: 0, itemId: "leather-armor", qty: 1 },
   { x: 0, z: 80, itemId: "steel-sword", qty: 1 },
+  // Whispering Forest (z > FOREST_ZONE_Z) — same pickup mechanic, plus the
+  // new forest-exclusive "moonpetal" curio.
+  { x: 10, z: 115, itemId: "moonpetal", qty: 3 },
+  { x: -35, z: 130, itemId: "moonpetal", qty: 2 },
+  { x: 45, z: 150, itemId: "health-draught", qty: 2 },
+  { x: -15, z: 155, itemId: "gold-coin", qty: 5 },
+  { x: 0, z: 165, itemId: "moonpetal", qty: 4 },
 ];
 
 /** @type {Map<string, object>} */
@@ -145,18 +162,26 @@ const MOB_RETARGET_CHANCE = 0.02; // per-tick chance to pick a new wander point 
 const MOB_MAX_HP = 60;
 const MOB_DAMAGE = 20; // per hit
 const MOB_ATTACK_RANGE = 3.2; // player must be within this distance of a mob to hit it
-const MOB_NAMES = ["Boar", "Wild Boar", "Tusked Boar", "Razorback", "Boar Sow", "Mud Boar"];
 const MOB_RESPAWN_MS = 15000; // a defeated mob returns to life this long after dying
 const MOB_COUNTER_CHANCE = 0.4; // chance a mob that survives a hit gouges the attacker back
 const MOB_COUNTER_DAMAGE = 12; // damage dealt to the player on a mob counter-attack
 
+// Each spawn now carries its own name directly (rather than picking one from
+// a shared array by index) so the new Whispering Forest wolves below don't
+// have to share a name pool with the meadow boars.
 const MOB_SPAWNS = [
-  { x: 20, z: 15 },
-  { x: -25, z: 10 },
-  { x: 10, z: -30 },
-  { x: -15, z: -20 },
-  { x: 35, z: -5 },
-  { x: -5, z: 35 },
+  { x: 20, z: 15, name: "Boar" },
+  { x: -25, z: 10, name: "Wild Boar" },
+  { x: 10, z: -30, name: "Tusked Boar" },
+  { x: -15, z: -20, name: "Razorback" },
+  { x: 35, z: -5, name: "Boar Sow" },
+  { x: -5, z: 35, name: "Mud Boar" },
+  // Whispering Forest (z > FOREST_ZONE_Z) — wolves, same mechanics as boars.
+  { x: 15, z: 120, name: "Grey Wolf" },
+  { x: -20, z: 135, name: "Timber Wolf" },
+  { x: 45, z: 150, name: "Dire Wolf" },
+  { x: -45, z: 115, name: "Lone Wolf" },
+  { x: 0, z: 160, name: "Alpha Wolf" },
 ];
 
 /** @type {Map<string, object>} */
@@ -173,7 +198,7 @@ function spawnMobs() {
   MOB_SPAWNS.forEach((spawn, i) => {
     const mob = {
       id: `mob-${i}`,
-      name: MOB_NAMES[i % MOB_NAMES.length],
+      name: spawn.name,
       homeX: spawn.x,
       homeZ: spawn.z,
       x: spawn.x,
