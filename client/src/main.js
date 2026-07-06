@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { buildWorld } from "./world.js";
 import { createCharacterMesh, RemotePlayer, triggerAttack, updateAttack } from "./player.js";
+import { Mob } from "./mob.js";
 import { initInput, keys, mouse, attack as attackInput } from "./input.js";
 import { connectToServer } from "./network.js";
 import { initChat } from "./chat.js";
@@ -11,6 +12,8 @@ const labelsEl = document.getElementById("labels");
 const cooldownFillEl = document.getElementById("attack-cooldown-fill");
 
 const ATTACK_COOLDOWN = 0.6; // seconds between local attacks
+const MOB_ATTACK_RANGE = 3.2; // must match server's MOB_ATTACK_RANGE
+const MOB_ATTACK_FACING_DOT = 0.3; // mob must be roughly in front of the player to be targeted
 
 // ---- Renderer / scene / camera -------------------------------------------------
 
@@ -48,12 +51,13 @@ const local = {
 };
 
 const remotePlayers = new Map(); // id -> RemotePlayer
-const labelEls = new Map(); // id -> HTMLDivElement (name tag)
-const healthBarEls = new Map(); // id -> { outer, fill } HTMLDivElements
+const mobs = new Map(); // id -> Mob
+const labelEls = new Map(); // id -> HTMLDivElement (name tag), shared by players + mobs
+const healthBarEls = new Map(); // id -> { outer, fill } HTMLDivElements, shared by players + mobs
 
-function makeLabel(text, isSelf) {
+function makeLabel(text, variant) {
   const div = document.createElement("div");
-  div.className = "player-label" + (isSelf ? " self" : "");
+  div.className = "player-label" + (variant ? ` ${variant}` : "");
   div.textContent = text;
   labelsEl.appendChild(div);
   return div;
@@ -108,7 +112,7 @@ net = connectToServer({
     local.mesh = createCharacterMesh(data.self.color);
     local.mesh.position.set(data.self.x, data.self.y, data.self.z);
     scene.add(local.mesh);
-    labelEls.set(local.id, makeLabel(local.name, true));
+    labelEls.set(local.id, makeLabel(local.name, "self"));
     healthBarEls.set(local.id, makeHealthBar());
     setHealthBarHp(local.id, local.hp, local.maxHp);
 
@@ -118,6 +122,10 @@ net = connectToServer({
     for (const p of data.players) {
       if (p.id === local.id) continue;
       spawnRemote(p);
+    }
+
+    for (const m of data.mobs || []) {
+      if (m.alive) spawnMob(m);
     }
   },
 
@@ -157,14 +165,64 @@ net = connectToServer({
     const rp = remotePlayers.get(data.id);
     if (rp) rp.triggerAttack();
   },
+
+  onMobsState: (data) => {
+    for (const m of data) {
+      const mob = mobs.get(m.id);
+      if (mob) {
+        mob.setTarget(m.x, m.y, m.z, m.rotY);
+      } else if (m.alive) {
+        spawnMob(m);
+      }
+    }
+  },
+
+  onMobDamaged: (data) => {
+    const mob = mobs.get(data.id);
+    if (mob) {
+      mob.applyDamage(data.hp);
+      setHealthBarHp(data.id, mob.hp, mob.maxHp);
+    }
+  },
+
+  onMobDied: (data) => {
+    despawnMob(data.id);
+    chat.addSystemLine(`${data.name} was defeated${data.killedBy ? ` by ${data.killedBy}` : ""}.`);
+  },
 });
 
 function spawnRemote(p) {
   const rp = new RemotePlayer(scene, p);
   remotePlayers.set(p.id, rp);
-  labelEls.set(p.id, makeLabel(p.name, false));
+  labelEls.set(p.id, makeLabel(p.name));
   healthBarEls.set(p.id, makeHealthBar());
   setHealthBarHp(p.id, rp.hp, rp.maxHp);
+}
+
+function spawnMob(m) {
+  const mob = new Mob(scene, m);
+  mobs.set(m.id, mob);
+  labelEls.set(m.id, makeLabel(m.name, "mob"));
+  healthBarEls.set(m.id, makeHealthBar());
+  setHealthBarHp(m.id, mob.hp, mob.maxHp);
+}
+
+function despawnMob(id) {
+  const mob = mobs.get(id);
+  if (mob) {
+    mob.dispose(scene);
+    mobs.delete(id);
+  }
+  const label = labelEls.get(id);
+  if (label) {
+    label.remove();
+    labelEls.delete(id);
+  }
+  const bar = healthBarEls.get(id);
+  if (bar) {
+    bar.outer.remove();
+    healthBarEls.delete(id);
+  }
 }
 
 // ---- Movement + camera update ----------------------------------------------------
@@ -224,6 +282,36 @@ function updateLocalPlayer(dt) {
   camera.lookAt(local.mesh.position.x, local.mesh.position.y + eyeHeight, local.mesh.position.z);
 }
 
+/** Finds the nearest alive mob within attack range that's roughly in front of the player. */
+function findAttackTargetMobId() {
+  if (!local.mesh) return null;
+
+  const forwardX = Math.sin(local.mesh.rotation.y);
+  const forwardZ = Math.cos(local.mesh.rotation.y);
+
+  let bestId = null;
+  let bestDist = Infinity;
+
+  for (const [id, mob] of mobs) {
+    // Dead mobs are despawned immediately on "mobDied", so anything still in
+    // this map is alive — no extra alive-check needed here.
+    const dx = mob.mesh.position.x - local.mesh.position.x;
+    const dz = mob.mesh.position.z - local.mesh.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > MOB_ATTACK_RANGE || dist === 0) continue;
+
+    const dot = (dx / dist) * forwardX + (dz / dist) * forwardZ;
+    if (dot < MOB_ATTACK_FACING_DOT) continue;
+
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestId = id;
+    }
+  }
+
+  return bestId;
+}
+
 function updateLocalAttack(dt) {
   if (local.attackCooldownRemaining > 0) {
     local.attackCooldownRemaining = Math.max(0, local.attackCooldownRemaining - dt);
@@ -234,7 +322,7 @@ function updateLocalAttack(dt) {
     if (local.mesh && local.attackCooldownRemaining <= 0) {
       triggerAttack(local.mesh);
       local.attackCooldownRemaining = ATTACK_COOLDOWN;
-      net?.sendAttack();
+      net?.sendAttack(findAttackTargetMobId());
     }
   }
 
@@ -284,7 +372,7 @@ function updateLabels() {
       worldPos = _headPos.copy(local.mesh.position);
       worldPos.y += 2.3;
     } else {
-      const rp = remotePlayers.get(id);
+      const rp = remotePlayers.get(id) || mobs.get(id);
       if (!rp) continue;
       worldPos = rp.headWorldPosition(_headPos);
     }
@@ -313,6 +401,7 @@ function animate() {
   updateLocalAttack(dt);
 
   for (const rp of remotePlayers.values()) rp.update(dt);
+  for (const mob of mobs.values()) mob.update(dt);
 
   maybeSendMove(performance.now());
   updateLabels();
