@@ -5,7 +5,6 @@ reprioritized based on what's more fun to build/play.
 
 ## v0.4 — World & persistence
 
-- [ ] Persistent player state across sessions (save/load, likely via a small DB)
 - [ ] Basic account/login instead of a random guest name each session
 
 ## v0.5 — Polish & deployment

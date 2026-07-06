@@ -4,6 +4,7 @@
 import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import { loadPlayerRecord, savePlayerRecord, savePlayerRecords } from "./playerStore.js";
 
 const PORT = process.env.PORT || 3000;
 const WORLD_BOUNDS = 170; // players are clamped to +/- this on X/Z
@@ -16,6 +17,8 @@ const WORLD_BOUNDS = 170; // players are clamped to +/- this on X/Z
 const FOREST_ZONE_Z = 90; // z at/after which a player is considered "in the forest"
 const ATTACK_COOLDOWN_MS = 550; // slightly under the client's 600ms to allow for latency jitter
 const PLAYER_RESPAWN_MS = 5000; // delay before a defeated player returns to the world
+const AUTOSAVE_INTERVAL_MS = 60000; // periodic safety-net save of every connected player,
+// on top of the save-on-disconnect below, in case the process crashes/restarts uncleanly
 
 // ---- Inventory ------------------------------------------------------------------
 // Server-authoritative player inventory. Item pickups scattered in the world
@@ -368,6 +371,40 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+// ---- Persistence ----------------------------------------------------------------
+// Player progress is saved keyed by their chosen character name (see
+// sanitizeChosenName below) — there's no separate account/login system yet
+// (that's the next roadmap item), so the name doubles as the save-slot key
+// for now. See server/playerStore.js for the on-disk format.
+/** Extracts the subset of a live player object worth persisting across
+ * sessions (position, HP/level/XP, inventory, equipment) — deliberately
+ * excludes transient/derived fields like `id`, `alive`, and `lastAttackAt`. */
+function playerSaveRecord(player) {
+  return {
+    level: player.level,
+    xp: player.xp,
+    xpToNext: player.xpToNext,
+    maxHp: player.maxHp,
+    hp: player.hp,
+    inventory: player.inventory,
+    equipment: player.equipment,
+    x: player.x,
+    y: player.y,
+    z: player.z,
+    rotY: player.rotY,
+    savedAt: Date.now(),
+  };
+}
+
+/** Safety-net autosave of every currently connected player, run on a timer in
+ * addition to the save-on-disconnect in the connection handler below — so a
+ * server crash or hard restart loses at most AUTOSAVE_INTERVAL_MS of
+ * progress instead of an entire session's worth. */
+function autosaveConnectedPlayers() {
+  const entries = Array.from(players.values()).map((p) => ({ name: p.name, record: playerSaveRecord(p) }));
+  savePlayerRecords(entries);
+}
+
 // ---- Character creation (name/color chosen on the client's login screen) ------
 const NAME_PATTERN = /^[A-Za-z0-9 _-]{1,20}$/;
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
@@ -393,9 +430,12 @@ io.on("connection", (socket) => {
   // randomly generated guest name/color if missing or invalid — this keeps
   // older clients (and malformed auth payloads) working.
   const auth = socket.handshake.auth || {};
+  const chosenName = sanitizeChosenName(auth.name) || randomName();
+  const saved = loadPlayerRecord(chosenName);
+
   const player = {
     id: socket.id,
-    name: sanitizeChosenName(auth.name) || randomName(),
+    name: chosenName,
     color: sanitizeChosenColor(auth.color) || randomColor(),
     x: (Math.random() - 0.5) * 20,
     y: 0,
@@ -413,10 +453,32 @@ io.on("connection", (socket) => {
     // the visible character model on every client via "playerEquipmentChanged".
     equipment: { weapon: null, head: null, body: null },
   };
-  // Starter kit so the inventory panel has something to show before item
-  // pickups (a later roadmap item) exist in the world.
-  addItemToInventory(player, "rusty-sword", 1);
-  addItemToInventory(player, "health-draught", 3);
+
+  if (saved) {
+    // Returning player (matched by chosen name) — restore their progress
+    // instead of starting fresh. Always join alive at a valid HP regardless
+    // of what was saved (e.g. mid-respawn-timer when they disconnected), and
+    // clamp position in case WORLD_BOUNDS has shrunk since they last saved.
+    player.level = typeof saved.level === "number" ? saved.level : player.level;
+    player.xp = typeof saved.xp === "number" ? saved.xp : player.xp;
+    player.xpToNext = typeof saved.xpToNext === "number" ? saved.xpToNext : xpToNextLevel(player.level);
+    player.maxHp = typeof saved.maxHp === "number" ? saved.maxHp : player.maxHp;
+    player.hp = clamp(typeof saved.hp === "number" ? saved.hp : player.maxHp, 1, player.maxHp);
+    player.inventory = Array.isArray(saved.inventory) ? saved.inventory : player.inventory;
+    player.equipment = saved.equipment && typeof saved.equipment === "object"
+      ? { weapon: null, head: null, body: null, ...saved.equipment }
+      : player.equipment;
+    if (typeof saved.x === "number") player.x = clamp(saved.x, -WORLD_BOUNDS, WORLD_BOUNDS);
+    if (typeof saved.z === "number") player.z = clamp(saved.z, -WORLD_BOUNDS, WORLD_BOUNDS);
+    if (typeof saved.rotY === "number") player.rotY = saved.rotY;
+    console.log(`[restore] ${player.name} restored (level ${player.level}, ${player.inventory.length} item stack(s))`);
+  } else {
+    // First time we've seen this name — starter kit so the inventory panel
+    // has something to show before item pickups (a later roadmap item)
+    // exist in the world.
+    addItemToInventory(player, "rusty-sword", 1);
+    addItemToInventory(player, "health-draught", 3);
+  }
   players.set(socket.id, player);
 
   console.log(`[join] ${player.name} (${socket.id}) — ${players.size} online`);
@@ -528,6 +590,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    savePlayerRecord(player.name, playerSaveRecord(player));
     players.delete(socket.id);
     io.emit("playerLeft", { id: socket.id });
     console.log(`[leave] ${player.name} (${socket.id}) — ${players.size} online`);
@@ -537,6 +600,7 @@ io.on("connection", (socket) => {
 spawnMobs();
 spawnPickups();
 setInterval(tickMobs, MOB_TICK_MS);
+setInterval(autosaveConnectedPlayers, AUTOSAVE_INTERVAL_MS);
 
 httpServer.listen(PORT, () => {
   console.log(`Vanguard Rebooted server listening on http://localhost:${PORT}`);
