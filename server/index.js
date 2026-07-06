@@ -7,6 +7,7 @@ import { Server } from "socket.io";
 
 const PORT = process.env.PORT || 3000;
 const WORLD_BOUNDS = 90; // players are clamped to +/- this on X/Z
+const ATTACK_COOLDOWN_MS = 550; // slightly under the client's 600ms to allow for latency jitter
 
 const app = express();
 const httpServer = createServer(app);
@@ -42,6 +43,7 @@ io.on("connection", (socket) => {
     y: 0,
     z: (Math.random() - 0.5) * 20,
     rotY: 0,
+    lastAttackAt: 0,
   };
   players.set(socket.id, player);
 
@@ -69,6 +71,15 @@ io.on("connection", (socket) => {
     p.rotY = rotY;
 
     socket.broadcast.emit("playerMoved", { id: socket.id, x: p.x, y: p.y, z: p.z, rotY: p.rotY });
+  });
+
+  socket.on("attack", () => {
+    const p = players.get(socket.id);
+    if (!p) return;
+    const now = Date.now();
+    if (now - p.lastAttackAt < ATTACK_COOLDOWN_MS) return; // ignore spam / cooldown cheats
+    p.lastAttackAt = now;
+    socket.broadcast.emit("playerAttacked", { id: socket.id });
   });
 
   socket.on("chat", (message) => {

@@ -8,7 +8,7 @@ a full game.
 - **Client**: [Three.js](https://threejs.org/) (WebGL) + [Vite](https://vitejs.dev/), runs in the browser
 - **Server**: [Node.js](https://nodejs.org/) + [Express](https://expressjs.com/) + [Socket.io](https://socket.io/) for realtime state sync
 
-## Features (v0.1.0)
+## Features
 
 - 3D outdoor world (ground, trees, rocks, lighting/shadows, sky/fog)
 - Multiplayer: see other connected players move around in real time
@@ -16,6 +16,7 @@ a full game.
 - WASD (or arrow key) movement, camera-relative
 - Global text chat
 - Name tags floating above each character
+- Basic melee attack (click or `F`/`Space`) with a cooldown, synced to other players
 
 Not included yet — see [ROADMAP.md](./ROADMAP.md).
 
@@ -69,6 +70,7 @@ VITE_SERVER_URL=http://192.168.1.23:3000
 | `W` / `A` / `S` / `D`   | Move (camera-relative)          |
 | Mouse drag              | Orbit camera around your character |
 | Scroll wheel            | Zoom camera in/out               |
+| Click (no drag) / `F` / `Space` | Melee attack (cooldown applies) |
 | `Enter`                 | Focus chat box / send message    |
 | `Esc`                   | Clear & unfocus chat box          |
 

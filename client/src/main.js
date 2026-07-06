@@ -1,13 +1,16 @@
 import * as THREE from "three";
 import { buildWorld } from "./world.js";
-import { createCharacterMesh, RemotePlayer } from "./player.js";
-import { initInput, keys, mouse } from "./input.js";
+import { createCharacterMesh, RemotePlayer, triggerAttack, updateAttack } from "./player.js";
+import { initInput, keys, mouse, attack as attackInput } from "./input.js";
 import { connectToServer } from "./network.js";
 import { initChat } from "./chat.js";
 
 const canvas = document.getElementById("scene");
 const statusEl = document.getElementById("status");
 const labelsEl = document.getElementById("labels");
+const cooldownFillEl = document.getElementById("attack-cooldown-fill");
+
+const ATTACK_COOLDOWN = 0.6; // seconds between local attacks
 
 // ---- Renderer / scene / camera -------------------------------------------------
 
@@ -39,6 +42,7 @@ const local = {
   mesh: null,
   rotY: 0,
   moveSpeed: 7, // units/sec
+  attackCooldownRemaining: 0, // seconds left before another attack can fire
 };
 
 const remotePlayers = new Map(); // id -> RemotePlayer
@@ -118,6 +122,11 @@ net = connectToServer({
   onChat: (data) => {
     chat.addLine(data.name, data.text, data.id === local.id);
   },
+
+  onPlayerAttacked: (data) => {
+    const rp = remotePlayers.get(data.id);
+    if (rp) rp.triggerAttack();
+  },
 });
 
 function spawnRemote(p) {
@@ -182,6 +191,29 @@ function updateLocalPlayer(dt) {
   camera.lookAt(local.mesh.position.x, local.mesh.position.y + eyeHeight, local.mesh.position.z);
 }
 
+function updateLocalAttack(dt) {
+  if (local.attackCooldownRemaining > 0) {
+    local.attackCooldownRemaining = Math.max(0, local.attackCooldownRemaining - dt);
+  }
+
+  if (attackInput.requested) {
+    attackInput.requested = false;
+    if (local.mesh && local.attackCooldownRemaining <= 0) {
+      triggerAttack(local.mesh);
+      local.attackCooldownRemaining = ATTACK_COOLDOWN;
+      net?.sendAttack();
+    }
+  }
+
+  if (local.mesh) updateAttack(local.mesh, dt);
+
+  if (cooldownFillEl) {
+    const ready = local.attackCooldownRemaining <= 0;
+    cooldownFillEl.style.width = `${(1 - local.attackCooldownRemaining / ATTACK_COOLDOWN) * 100}%`;
+    cooldownFillEl.classList.toggle("ready", ready);
+  }
+}
+
 function maybeSendMove(now) {
   if (!local.mesh || !net) return;
   if (now - lastSendAt < 50) return; // ~20Hz cap
@@ -234,6 +266,7 @@ function animate() {
 
   updateCameraOrbit(dt);
   updateLocalPlayer(dt);
+  updateLocalAttack(dt);
 
   for (const rp of remotePlayers.values()) rp.update(dt);
 

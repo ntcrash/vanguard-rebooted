@@ -18,6 +18,7 @@ export function connectToServer(handlers) {
   socket.on("playerMoved", (data) => handlers.onPlayerMoved?.(data));
   socket.on("playerLeft", (data) => handlers.onPlayerLeft?.(data));
   socket.on("chat", (data) => handlers.onChat?.(data));
+  socket.on("playerAttacked", (data) => handlers.onPlayerAttacked?.(data));
 
   return {
     sendMove(x, y, z, rotY) {
@@ -25,6 +26,9 @@ export function connectToServer(handlers) {
     },
     sendChat(text) {
       socket.emit("chat", text);
+    },
+    sendAttack() {
+      socket.emit("attack");
     },
     raw: socket,
   };
