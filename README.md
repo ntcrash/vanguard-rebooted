@@ -15,9 +15,10 @@ a full game.
   login after that must use the same password (see `server/accountStore.js`);
   a wrong password is rejected outright rather than silently handing you a
   guest identity
-- 3D outdoor world (ground, trees, rocks, lighting/shadows, sky/fog) spanning two
-  distinct zones — the starting Meadow and the Whispering Forest to the north,
-  reached on foot past a pair of stone gateway pillars
+- 3D outdoor world (ground, grass, trees, rocks, soft shadows, a gradient sky
+  dome, and fog) spanning two distinct zones — the starting Meadow and the
+  Whispering Forest to the north, reached on foot past a pair of stone
+  gateway pillars, each lit by a flickering torch
 - Multiplayer: see other connected players move around in real time
 - Third-person camera you orbit with the mouse and zoom with the scroll wheel
 - WASD (or arrow key) movement, camera-relative, with a real walk/run gait —
