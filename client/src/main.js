@@ -170,8 +170,17 @@ function startGame(character) {
     onDisconnect: () => {
       statusEl.textContent = "Disconnected — reconnecting…";
     },
-    onConnectError: () => {
-      statusEl.textContent = "Cannot reach server (is it running on :3000?)";
+    onConnectError: (err) => {
+      // Covers both "server unreachable" and a rejected login (bad
+      // password, invalid name — see server/index.js's io.use() middleware).
+      // Either way, stop this socket from silently auto-retrying with the
+      // same (possibly wrong) credentials, and send the player back to the
+      // login screen with the server's reason so they can fix it and
+      // resubmit, which opens a fresh connection via startGame().
+      net.raw.disconnect();
+      const message = err?.message || "Cannot reach server (is it running on :3000?)";
+      statusEl.textContent = message;
+      loginScreen.showError(message);
     },
 
     onInit: (data) => {
@@ -197,7 +206,9 @@ function startGame(character) {
       setHealthBarHp(local.id, local.hp, local.maxHp);
 
       statusEl.textContent = `Connected as ${local.name}`;
-      chat.addSystemLine(`You joined as ${local.name}.`);
+      chat.addSystemLine(
+        data.newAccount ? `Account created — welcome, ${local.name}!` : `You joined as ${local.name}.`
+      );
 
       for (const p of data.players) {
         if (p.id === local.id) continue;
@@ -408,7 +419,7 @@ function startGame(character) {
   }, character);
 }
 
-initCharacterCreate(startGame);
+const loginScreen = initCharacterCreate(startGame);
 
 function spawnRemote(p) {
   const rp = new RemotePlayer(scene, p);

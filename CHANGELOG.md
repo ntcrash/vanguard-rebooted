@@ -7,6 +7,24 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Basic account/login instead of a random guest name each session: the login
+  screen now collects a username *and* password, backed by a new
+  dependency-free `server/accountStore.js` (Node's built-in `crypto.scrypt`
+  for salted password hashing, one atomically-written JSON file
+  `server/data/accounts.json`, gitignored). The first login with a given
+  username auto-registers that account with the given password; every login
+  after that must match, enforced by a Socket.io `io.use()` handshake
+  middleware in `server/index.js` that rejects the connection outright
+  (surfaced client-side as `connect_error`) on a missing/short password or a
+  wrong one — no more silent fallback to a randomly generated guest name.
+  The account's (display-cased) username is what `server/playerStore.js`
+  persistence keys off of, same as before, so existing saves keep working
+  the first time their owner "claims" the name with a password. Client-side,
+  `client/src/characterCreate.js` gained a password field and a
+  `showError()` re-entry point so a rejected login re-shows the screen with
+  the server's reason instead of leaving the player stuck; a one-time
+  "Account created" chat line (vs. "You joined as ...") tells new vs.
+  returning players apart on login.
 - Persistent player state across sessions: level, XP, HP, inventory, and
   equipment, plus last position, are now saved server-side and restored on
   reconnect. Storage is a deliberately tiny "database" — a single JSON file

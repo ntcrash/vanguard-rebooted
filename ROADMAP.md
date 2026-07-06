@@ -3,10 +3,6 @@
 A rough, non-binding order of what's planned next. Anything here can be
 reprioritized based on what's more fun to build/play.
 
-## v0.4 — World & persistence
-
-- [ ] Basic account/login instead of a random guest name each session
-
 ## v0.5 — Polish & deployment
 
 - [ ] Better character models/animations (walk/run/attack) instead of primitive shapes

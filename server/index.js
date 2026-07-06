@@ -5,6 +5,7 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { loadPlayerRecord, savePlayerRecord, savePlayerRecords } from "./playerStore.js";
+import { resolveLogin } from "./accountStore.js";
 
 const PORT = process.env.PORT || 3000;
 const WORLD_BOUNDS = 170; // players are clamped to +/- this on X/Z
@@ -357,13 +358,10 @@ function awardXp(player, amount) {
 /** @type {Map<string, {id: string, name: string, color: string, x: number, y: number, z: number, rotY: number}>} */
 const players = new Map();
 
-const NAME_ADJECTIVES = ["Brave", "Swift", "Shadow", "Iron", "Storm", "Wild", "Silent", "Crimson"];
-const NAME_NOUNS = ["Wolf", "Raven", "Blade", "Hawk", "Ranger", "Warden", "Ember", "Fox"];
-function randomName() {
-  const a = NAME_ADJECTIVES[Math.floor(Math.random() * NAME_ADJECTIVES.length)];
-  const n = NAME_NOUNS[Math.floor(Math.random() * NAME_NOUNS.length)];
-  return `${a}${n}${Math.floor(Math.random() * 100)}`;
-}
+// Guest name/color generators are gone now that a real account is required
+// to join (see the io.use() login middleware above) — randomColor() below is
+// kept only as the cosmetic fallback when a valid account logs in without
+// picking a color (e.g. an older/malformed client), not for guest identities.
 function randomColor() {
   return `hsl(${Math.floor(Math.random() * 360)}, 70%, 55%)`;
 }
@@ -372,10 +370,11 @@ function clamp(v, min, max) {
 }
 
 // ---- Persistence ----------------------------------------------------------------
-// Player progress is saved keyed by their chosen character name (see
-// sanitizeChosenName below) — there's no separate account/login system yet
-// (that's the next roadmap item), so the name doubles as the save-slot key
-// for now. See server/playerStore.js for the on-disk format.
+// Player progress is saved keyed by the account's display-cased name (now
+// verified by accountStore.js's login middleware, see io.use() above) — the
+// name still doubles as the playerStore.js save-slot key, but it's no longer
+// a free-for-all: a save can now only be reached by whoever knows that
+// account's password. See server/playerStore.js for the on-disk format.
 /** Extracts the subset of a live player object worth persisting across
  * sessions (position, HP/level/XP, inventory, equipment) — deliberately
  * excludes transient/derived fields like `id`, `alive`, and `lastAttackAt`. */
@@ -405,10 +404,20 @@ function autosaveConnectedPlayers() {
   savePlayerRecords(entries);
 }
 
-// ---- Character creation (name/color chosen on the client's login screen) ------
+// ---- Account / login (name+password chosen on the client's login screen) ------
+// Replaces the old "random guest name each session" flow: a player now
+// chooses a username + password on the login screen. The *first* time a
+// username is used it becomes that player's account (auto-registration, so
+// there's still just one login screen rather than separate signup/login
+// screens); every time after that the password must match, via
+// accountStore.js's resolveLogin(). This is what actually stops one player
+// from hijacking another's save just by typing in their name, which the old
+// name-only scheme allowed.
 const NAME_PATTERN = /^[A-Za-z0-9 _-]{1,20}$/;
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 const HSL_COLOR_PATTERN = /^hsl\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*\)$/;
+const PASSWORD_MIN_LENGTH = 4;
+const PASSWORD_MAX_LENGTH = 64;
 
 /** Returns a trimmed, validated name from client auth, or null if invalid/absent. */
 function sanitizeChosenName(raw) {
@@ -424,13 +433,51 @@ function sanitizeChosenColor(raw) {
   return null;
 }
 
-io.on("connection", (socket) => {
-  // Name/color chosen on the client's character-creation screen (see
-  // client/src/characterCreate.js), sent as socket.io auth. Falls back to a
-  // randomly generated guest name/color if missing or invalid — this keeps
-  // older clients (and malformed auth payloads) working.
+/** Returns `raw` if it's a plausible password (length-bounded only — no
+ * character-set restriction beyond what socket.io/JSON already require), or
+ * null if missing/too short/too long. */
+function sanitizePassword(raw) {
+  if (typeof raw !== "string") return null;
+  if (raw.length < PASSWORD_MIN_LENGTH || raw.length > PASSWORD_MAX_LENGTH) return null;
+  return raw;
+}
+
+// Socket.io connection middleware: runs before the "connection" event below
+// and can reject the handshake outright (client sees it as "connect_error"
+// with our message) — this is what makes login actually block entry into
+// the world on a bad password, rather than just silently falling back to a
+// guest identity the way the old flow did.
+io.use((socket, next) => {
   const auth = socket.handshake.auth || {};
-  const chosenName = sanitizeChosenName(auth.name) || randomName();
+  const name = sanitizeChosenName(auth.name);
+  if (!name) {
+    return next(new Error("Enter a name: 1-20 characters (letters, numbers, spaces, - or _)."));
+  }
+  const password = sanitizePassword(auth.password);
+  if (!password) {
+    return next(new Error(`Enter a password (${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} characters).`));
+  }
+
+  const result = resolveLogin(name, password);
+  if (!result.ok) {
+    return next(new Error("Incorrect password for that name."));
+  }
+
+  // Stash the resolved (display-cased) account name for the "connection"
+  // handler below — socket.data persists across the middleware -> connection
+  // handoff for the same socket.
+  socket.data.accountName = result.name;
+  socket.data.newAccount = !!result.created;
+  next();
+});
+
+io.on("connection", (socket) => {
+  // Username/color chosen on the client's login screen (see
+  // client/src/characterCreate.js) — the username is already verified
+  // against accountStore.js by the io.use() middleware above by this point,
+  // so it's always a legitimate account name, never a random guest id.
+  const auth = socket.handshake.auth || {};
+  const chosenName = socket.data.accountName;
   const saved = loadPlayerRecord(chosenName);
 
   const player = {
@@ -481,12 +528,19 @@ io.on("connection", (socket) => {
   }
   players.set(socket.id, player);
 
+  if (socket.data.newAccount) {
+    console.log(`[account] new account created: ${player.name}`);
+  }
   console.log(`[join] ${player.name} (${socket.id}) — ${players.size} online`);
 
-  // Send the new player their own info + the current world state.
+  // Send the new player their own info + the current world state. Includes
+  // `newAccount` so the client can show a one-time "account created" hint
+  // rather than making a returning player think they created a fresh account
+  // every login.
   socket.emit("init", {
     id: socket.id,
     self: player,
+    newAccount: !!socket.data.newAccount,
     players: Array.from(players.values()),
     mobs: mobsSnapshot(),
     pickups: pickupsSnapshot(),
