@@ -22,6 +22,10 @@ export function connectToServer(handlers) {
   socket.on("mobsState", (data) => handlers.onMobsState?.(data));
   socket.on("mobDamaged", (data) => handlers.onMobDamaged?.(data));
   socket.on("mobDied", (data) => handlers.onMobDied?.(data));
+  socket.on("mobRespawned", (data) => handlers.onMobRespawned?.(data));
+  socket.on("playerDamaged", (data) => handlers.onPlayerDamaged?.(data));
+  socket.on("playerDied", (data) => handlers.onPlayerDied?.(data));
+  socket.on("playerRespawned", (data) => handlers.onPlayerRespawned?.(data));
 
   return {
     sendMove(x, y, z, rotY) {

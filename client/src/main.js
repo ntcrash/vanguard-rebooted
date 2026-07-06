@@ -47,6 +47,7 @@ const local = {
   rotY: 0,
   hp: 100,
   maxHp: 100,
+  alive: true,
   moveSpeed: 7, // units/sec
   attackCooldownRemaining: 0, // seconds left before another attack can fire
 };
@@ -110,6 +111,7 @@ net = connectToServer({
     local.rotY = data.self.rotY;
     local.hp = data.self.hp ?? 100;
     local.maxHp = data.self.maxHp ?? 100;
+    local.alive = data.self.alive ?? true;
 
     local.mesh = createCharacterMesh(data.self.color);
     local.mesh.position.set(data.self.x, data.self.y, data.self.z);
@@ -197,6 +199,74 @@ net = connectToServer({
     despawnMob(data.id);
     chat.addSystemLine(`${data.name} was defeated${data.killedBy ? ` by ${data.killedBy}` : ""}.`);
   },
+
+  onMobRespawned: (data) => {
+    spawnMob(data);
+    chat.addSystemLine(`${data.name} has respawned.`);
+  },
+
+  onPlayerDamaged: (data) => {
+    if (data.id === local.id) {
+      const dmg = local.hp - data.hp;
+      local.hp = data.hp;
+      setHealthBarHp(local.id, local.hp, local.maxHp);
+      if (local.mesh) {
+        _dmgPos.copy(local.mesh.position);
+        _dmgPos.y += 2.3;
+        damageNumbers.spawn(_dmgPos, dmg);
+      }
+    } else {
+      const rp = remotePlayers.get(data.id);
+      if (rp) {
+        const dmg = rp.hp - data.hp;
+        rp.hp = data.hp;
+        setHealthBarHp(data.id, rp.hp, rp.maxHp);
+        damageNumbers.spawn(rp.headWorldPosition(_dmgPos), dmg);
+      }
+    }
+  },
+
+  onPlayerDied: (data) => {
+    if (data.id === local.id) {
+      local.alive = false;
+      if (local.mesh) local.mesh.visible = false;
+      statusEl.textContent = "You died — respawning…";
+      chat.addSystemLine(`You were defeated${data.killedBy ? ` by a ${data.killedBy}` : ""}.`);
+    } else {
+      const rp = remotePlayers.get(data.id);
+      if (rp) rp.mesh.visible = false;
+      chat.addSystemLine(`${data.name} was defeated${data.killedBy ? ` by a ${data.killedBy}` : ""}.`);
+    }
+  },
+
+  onPlayerRespawned: (data) => {
+    if (data.id === local.id) {
+      local.hp = data.hp;
+      local.maxHp = data.maxHp;
+      local.alive = true;
+      if (local.mesh) {
+        local.mesh.position.set(data.x, data.y, data.z);
+        local.mesh.rotation.y = data.rotY;
+        local.mesh.visible = true;
+      }
+      setHealthBarHp(local.id, local.hp, local.maxHp);
+      statusEl.textContent = `Connected as ${local.name}`;
+      chat.addSystemLine("You respawned.");
+      // Force the next move tick to broadcast, so remote clients see the teleport.
+      lastSent = { x: null, y: null, z: null, rotY: null };
+    } else {
+      const rp = remotePlayers.get(data.id);
+      if (rp) {
+        rp.hp = data.hp;
+        rp.maxHp = data.maxHp;
+        rp.mesh.position.set(data.x, data.y, data.z);
+        rp.mesh.rotation.y = data.rotY;
+        rp.mesh.visible = true;
+        rp.setTarget(data.x, data.y, data.z, data.rotY);
+        setHealthBarHp(data.id, rp.hp, rp.maxHp);
+      }
+    }
+  },
 });
 
 function spawnRemote(p) {
@@ -257,7 +327,7 @@ function updateCameraOrbit(dt) {
 }
 
 function updateLocalPlayer(dt) {
-  if (!local.mesh) return;
+  if (!local.mesh || !local.alive) return;
 
   const { azimuth, elevation, distance } = cameraState;
 
@@ -332,7 +402,7 @@ function updateLocalAttack(dt) {
 
   if (attackInput.requested) {
     attackInput.requested = false;
-    if (local.mesh && local.attackCooldownRemaining <= 0) {
+    if (local.mesh && local.alive && local.attackCooldownRemaining <= 0) {
       triggerAttack(local.mesh);
       local.attackCooldownRemaining = ATTACK_COOLDOWN;
       net?.sendAttack(findAttackTargetMobId());
@@ -349,7 +419,7 @@ function updateLocalAttack(dt) {
 }
 
 function maybeSendMove(now) {
-  if (!local.mesh || !net) return;
+  if (!local.mesh || !net || !local.alive) return;
   if (now - lastSendAt < 50) return; // ~20Hz cap
 
   const p = local.mesh.position;

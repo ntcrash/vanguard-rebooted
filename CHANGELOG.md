@@ -7,6 +7,22 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Respawn handling for mobs and players:
+  - Defeated mobs return to life at their home spawn point 15 seconds after
+    dying (`respawnMob()` in `server/index.js`), broadcast as `mobRespawned`.
+    The client re-spawns the mob's mesh/health bar/name tag and posts a system
+    chat line, reusing the existing mob spawn path.
+  - Mobs that survive a hit now have a 40% chance to gore the attacker back
+    for damage (`MOB_COUNTER_CHANCE`/`MOB_COUNTER_DAMAGE`), giving melee combat
+    real risk and giving players an actual way to die.
+  - A player whose HP hits 0 is marked dead server-side (`playerDied`), can no
+    longer move or attack (server re-validates `alive` on both `move` and
+    `attack`), and respawns 5 seconds later at a fresh random spot with full
+    HP (`playerRespawned`). Client-side, the dead player's mesh is hidden and
+    reappears at the new position on respawn; the local player sees a "You
+    died — respawning…" status message and loses input control while dead.
+  - New `playerDamaged` event keeps everyone's health bars in sync when a
+    player (not just a mob) takes damage.
 - Damage numbers: floating combat text pops up above a mob and rises/fades
   whenever it takes a hit, showing the exact damage dealt
   (`client/src/damageNumbers.js`). Killing blows are shown larger and in a
@@ -22,8 +38,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   it alongside the existing `attack` event. The server re-validates range
   server-side before applying damage (`mobDamaged`) or, at 0 HP, defeat
   (`mobDied`) — a modified client can't hit mobs from across the map. Defeated
-  mobs briefly flash red for hit feedback and are removed from the world; mob
-  respawn is a separate, not-yet-implemented roadmap item.
+  mobs briefly flash red for hit feedback and are removed from the world until
+  they respawn (see respawn handling above).
 - Health bars floating above every character (self and remote players), tracked
   server-side (`hp`/`maxHp` per player, defaulting to 100/100) and rendered as a
   small DOM bar just above each player's name tag, color-shifting to red at low HP.
