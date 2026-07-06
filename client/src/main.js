@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { buildWorld } from "./world.js";
-import { createCharacterMesh, RemotePlayer, triggerAttack, updateAttack } from "./player.js";
+import { createCharacterMesh, applyEquipment, RemotePlayer, triggerAttack, updateAttack } from "./player.js";
 import { Mob } from "./mob.js";
 import { Pickup } from "./pickup.js";
 import { initInput, keys, mouse, attack as attackInput, inventoryToggle } from "./input.js";
@@ -55,7 +55,8 @@ const local = {
   alive: true,
   moveSpeed: 7, // units/sec
   attackCooldownRemaining: 0, // seconds left before another attack can fire
-  inventory: [], // [{ itemId, name, icon, qty }], server-authoritative
+  inventory: [], // [{ itemId, name, icon, qty, slot }], server-authoritative
+  equipment: { weapon: null, head: null, body: null }, // server-authoritative
 };
 
 const remotePlayers = new Map(); // id -> RemotePlayer
@@ -76,10 +77,28 @@ function renderInventory() {
     const div = document.createElement("div");
     div.className = "inventory-slot" + (slot ? "" : " empty");
     if (slot) {
-      div.title = `${slot.name} x${slot.qty}`;
+      const isEquippable = !!slot.slot;
+      const isEquipped = isEquippable && local.equipment[slot.slot] === slot.itemId;
+      if (isEquippable) div.classList.add("equippable");
+      if (isEquipped) div.classList.add("equipped");
+
+      div.title =
+        `${slot.name} x${slot.qty}` +
+        (isEquippable ? (isEquipped ? " (equipped — click to unequip)" : " (click to equip)") : "");
       div.innerHTML =
         `<span class="item-icon">${slot.icon}</span>` +
         (slot.qty > 1 ? `<span class="item-qty">${slot.qty}</span>` : "");
+
+      // Gear (weapon/head/body slot) can be equipped/unequipped by clicking
+      // its inventory tile — re-clicking an equipped item unequips it. The
+      // server is the source of truth: this only requests the change; the
+      // visible result comes back via "playerEquipmentChanged".
+      if (isEquippable) {
+        div.addEventListener("click", () => {
+          if (isEquipped) net?.sendUnequip(slot.slot);
+          else net?.sendEquip(slot.itemId);
+        });
+      }
     }
     inventoryGridEl.appendChild(div);
   }
@@ -148,9 +167,10 @@ function startGame(character) {
       local.maxHp = data.self.maxHp ?? 100;
       local.alive = data.self.alive ?? true;
       local.inventory = data.self.inventory || [];
+      local.equipment = data.self.equipment || { weapon: null, head: null, body: null };
       renderInventory();
 
-      local.mesh = createCharacterMesh(data.self.color);
+      local.mesh = createCharacterMesh(data.self.color, local.equipment);
       local.mesh.position.set(data.self.x, data.self.y, data.self.z);
       scene.add(local.mesh);
       labelEls.set(local.id, makeLabel(local.name, "self"));
@@ -327,6 +347,17 @@ function startGame(character) {
     onInventoryUpdated: (data) => {
       local.inventory = data.inventory || [];
       renderInventory();
+    },
+
+    onPlayerEquipmentChanged: (data) => {
+      if (data.id === local.id) {
+        local.equipment = data.equipment || { weapon: null, head: null, body: null };
+        if (local.mesh) applyEquipment(local.mesh, local.equipment);
+        renderInventory(); // refresh which tile shows as "equipped"
+      } else {
+        const rp = remotePlayers.get(data.id);
+        if (rp) rp.setEquipment(data.equipment);
+      }
     },
   }, character);
 }

@@ -216,6 +216,19 @@ html, body {
   border-color: rgba(255, 255, 255, 0.08);
 }
 
+.inventory-slot.equippable {
+  cursor: pointer;
+}
+
+.inventory-slot.equippable:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.inventory-slot.equipped {
+  border-color: #7ee0ff;
+  box-shadow: 0 0 0 1px rgba(126, 224, 255, 0.6) inset;
+}
+
 .inventory-slot .item-icon {
   font-size: 18px;
   line-height: 1;

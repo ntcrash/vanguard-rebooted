@@ -36,6 +36,7 @@ export function connectToServer(handlers, character) {
   socket.on("itemPickedUp", (data) => handlers.onItemPickedUp?.(data));
   socket.on("pickupRespawned", (data) => handlers.onPickupRespawned?.(data));
   socket.on("inventoryUpdated", (data) => handlers.onInventoryUpdated?.(data));
+  socket.on("playerEquipmentChanged", (data) => handlers.onPlayerEquipmentChanged?.(data));
 
   return {
     sendMove(x, y, z, rotY) {
@@ -46,6 +47,12 @@ export function connectToServer(handlers, character) {
     },
     sendAttack(targetMobId) {
       socket.emit("attack", targetMobId ? { targetMobId } : undefined);
+    },
+    sendEquip(itemId) {
+      socket.emit("equipItem", itemId);
+    },
+    sendUnequip(slot) {
+      socket.emit("unequipItem", slot);
     },
     raw: socket,
   };
