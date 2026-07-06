@@ -149,3 +149,19 @@ html, body {
 #chat-input:focus {
   border-color: #7ee0ff;
 }
+
+.damage-number {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  color: #ffcf4a;
+  font-size: 15px;
+  font-weight: 700;
+  text-shadow: 0 0 4px #000, 0 0 4px #000;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.damage-number.finishing {
+  color: #ff5a4a;
+  font-size: 19px;
+}

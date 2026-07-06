@@ -20,6 +20,7 @@ a full game.
 - Basic melee attack (click or `F`/`Space`) with a cooldown, synced to other players
 - Mob NPCs: wandering boars scattered around the world that can be attacked and
   defeated (auto-targeted when one's in range and roughly in front of you)
+- Floating damage numbers pop up whenever a mob takes a hit
 
 Not included yet — see [ROADMAP.md](./ROADMAP.md).
 
