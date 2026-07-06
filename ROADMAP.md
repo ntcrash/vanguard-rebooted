@@ -5,7 +5,6 @@ reprioritized based on what's more fun to build/play.
 
 ## v0.2 — Combat basics
 - [ ] Add login, character creation
-- [ ] Respawn handling for players and mobs
 
 ## v0.3 — Progression & items
 

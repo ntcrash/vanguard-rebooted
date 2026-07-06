@@ -8,10 +8,11 @@ import { Server } from "socket.io";
 const PORT = process.env.PORT || 3000;
 const WORLD_BOUNDS = 90; // players are clamped to +/- this on X/Z
 const ATTACK_COOLDOWN_MS = 550; // slightly under the client's 600ms to allow for latency jitter
+const PLAYER_RESPAWN_MS = 5000; // delay before a defeated player returns to the world
 
 // ---- Mob NPCs -----------------------------------------------------------------
-// Simple wandering mobs that players can attack and defeat. No respawn yet —
-// once a mob dies it stays dead (respawn handling is a separate roadmap item).
+// Simple wandering mobs that players can attack and defeat. Defeated mobs
+// respawn at their home spawn point after MOB_RESPAWN_MS.
 const MOB_TICK_MS = 200;
 const MOB_SPEED = 1.4; // units/sec while wandering
 const MOB_WANDER_RADIUS = 12; // stays within this distance of its spawn point
@@ -21,6 +22,9 @@ const MOB_MAX_HP = 60;
 const MOB_DAMAGE = 20; // per hit
 const MOB_ATTACK_RANGE = 3.2; // player must be within this distance of a mob to hit it
 const MOB_NAMES = ["Boar", "Wild Boar", "Tusked Boar", "Razorback", "Boar Sow", "Mud Boar"];
+const MOB_RESPAWN_MS = 15000; // a defeated mob returns to life this long after dying
+const MOB_COUNTER_CHANCE = 0.4; // chance a mob that survives a hit gouges the attacker back
+const MOB_COUNTER_DAMAGE = 12; // damage dealt to the player on a mob counter-attack
 
 const MOB_SPAWNS = [
   { x: 20, z: 15 },
@@ -75,6 +79,47 @@ function mobsSnapshot() {
     maxHp: m.maxHp,
     alive: m.alive,
   }));
+}
+
+/** Brings a defeated mob back to life at its home spawn point. */
+function respawnMob(mob) {
+  mob.hp = mob.maxHp;
+  mob.alive = true;
+  mob.x = mob.homeX;
+  mob.z = mob.homeZ;
+  mob.rotY = 0;
+  pickWanderTarget(mob);
+  io.emit("mobRespawned", {
+    id: mob.id,
+    name: mob.name,
+    x: mob.x,
+    y: mob.y,
+    z: mob.z,
+    rotY: mob.rotY,
+    hp: mob.hp,
+    maxHp: mob.maxHp,
+    alive: true,
+  });
+}
+
+/** Brings a defeated player back into the world at a fresh random spot. */
+function respawnPlayer(player) {
+  if (!players.has(player.id)) return; // disconnected before their respawn timer fired
+  player.hp = player.maxHp;
+  player.alive = true;
+  player.x = (Math.random() - 0.5) * 20;
+  player.y = 0;
+  player.z = (Math.random() - 0.5) * 20;
+  player.rotY = 0;
+  io.emit("playerRespawned", {
+    id: player.id,
+    x: player.x,
+    y: player.y,
+    z: player.z,
+    rotY: player.rotY,
+    hp: player.hp,
+    maxHp: player.maxHp,
+  });
 }
 
 function tickMobs() {
@@ -136,6 +181,7 @@ io.on("connection", (socket) => {
     rotY: 0,
     hp: 100,
     maxHp: 100,
+    alive: true,
     lastAttackAt: 0,
   };
   players.set(socket.id, player);
@@ -155,7 +201,7 @@ io.on("connection", (socket) => {
 
   socket.on("move", (data) => {
     const p = players.get(socket.id);
-    if (!p || typeof data !== "object" || data === null) return;
+    if (!p || !p.alive || typeof data !== "object" || data === null) return;
     const { x, y, z, rotY } = data;
     if ([x, y, z, rotY].some((v) => typeof v !== "number" || !Number.isFinite(v))) return;
 
@@ -169,7 +215,7 @@ io.on("connection", (socket) => {
 
   socket.on("attack", (data) => {
     const p = players.get(socket.id);
-    if (!p) return;
+    if (!p || !p.alive) return;
     const now = Date.now();
     if (now - p.lastAttackAt < ATTACK_COOLDOWN_MS) return; // ignore spam / cooldown cheats
     p.lastAttackAt = now;
@@ -191,8 +237,23 @@ io.on("connection", (socket) => {
     if (mob.hp <= 0) {
       mob.alive = false;
       io.emit("mobDied", { id: mob.id, name: mob.name, killedBy: p.name });
-    } else {
-      io.emit("mobDamaged", { id: mob.id, hp: mob.hp });
+      setTimeout(() => respawnMob(mob), MOB_RESPAWN_MS);
+      return;
+    }
+
+    io.emit("mobDamaged", { id: mob.id, hp: mob.hp });
+
+    // A mob that survives the hit has a chance to gore the attacker back —
+    // gives melee combat real risk and gives player respawn something to do.
+    if (p.alive && Math.random() < MOB_COUNTER_CHANCE) {
+      p.hp = Math.max(0, p.hp - MOB_COUNTER_DAMAGE);
+      if (p.hp <= 0) {
+        p.alive = false;
+        io.emit("playerDied", { id: p.id, name: p.name, killedBy: mob.name });
+        setTimeout(() => respawnPlayer(p), PLAYER_RESPAWN_MS);
+      } else {
+        io.emit("playerDamaged", { id: p.id, hp: p.hp });
+      }
     }
   });
 
