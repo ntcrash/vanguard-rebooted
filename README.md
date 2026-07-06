@@ -38,6 +38,12 @@ a full game.
 - Respawn handling: defeated mobs come back to life at their spawn point after
   a short delay, and mobs occasionally hit back — a player defeated in combat
   respawns nearby a few seconds later with full health
+- Persistent player state: level, XP, HP, inventory, equipment, and position
+  are saved server-side (`server/data/players.json`, gitignored) keyed by
+  your chosen character name, and restored automatically the next time you
+  join with that same name — progress survives reconnects and server
+  restarts. There's no account/login system yet (see ROADMAP), so name
+  doubles as the save-slot key for now.
 
 Not included yet — see [ROADMAP.md](./ROADMAP.md).
 

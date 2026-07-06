@@ -7,6 +7,19 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Persistent player state across sessions: level, XP, HP, inventory, and
+  equipment, plus last position, are now saved server-side and restored on
+  reconnect. Storage is a deliberately tiny "database" — a single JSON file
+  (`server/data/players.json`, gitignored, written atomically via a
+  temp-file-then-rename in `server/playerStore.js`) keyed by the player's
+  chosen character name, since there's no separate account/login system yet
+  (next roadmap item). New names still get the usual starter kit; a name
+  that's been seen before loads its saved record instead, with position
+  re-clamped to the current `WORLD_BOUNDS` in case it's changed since the
+  save. Saved on every disconnect, plus a 60s safety-net autosave
+  (`autosaveConnectedPlayers()`) of all connected players so a server crash
+  or hard restart loses at most a minute of progress rather than a whole
+  session.
 - Larger, zoned world: the map now spans two distinct outdoor areas on one
   continuous plane — the original Meadow and a new Whispering Forest to the
   north (`FOREST_ZONE_Z` = 90 on both server and client), reached on foot
