@@ -253,7 +253,11 @@ function updateLocalPlayer(dt) {
   const { azimuth, elevation, distance } = cameraState;
 
   _forward.set(-Math.sin(azimuth), 0, -Math.cos(azimuth));
-  _right.set(_forward.z, 0, -_forward.x);
+  // Camera-relative right vector: cross(forward, worldUp), which for our
+  // forward gives (-forward.z, 0, forward.x). The previous sign here was
+  // flipped, so pressing D/right strafed toward the camera's left (and
+  // vice versa) — this was the "left is right" movement bug.
+  _right.set(-_forward.z, 0, _forward.x);
 
   _move.set(0, 0, 0);
   if (keys.forward) _move.add(_forward);
