@@ -3,10 +3,6 @@
 A rough, non-binding order of what's planned next. Anything here can be
 reprioritized based on what's more fun to build/play.
 
-## v0.3 — Progression & items
-
-- [ ] Basic XP/leveling tied to defeating mobs
-
 ## v0.4 — World & persistence
 
 - [ ] Larger / zoned world (more than one outdoor area)

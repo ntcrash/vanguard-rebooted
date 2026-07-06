@@ -29,6 +29,8 @@ a full game.
   walk over them, and respawn after a short delay
 - Mob NPCs: wandering boars scattered around the world that can be attacked and
   defeated (auto-targeted when one's in range and roughly in front of you)
+- XP/leveling: defeating mobs earns XP toward your next level, shown as a
+  level + XP bar in the HUD; leveling up fully heals you and raises your max HP
 - Floating damage numbers pop up whenever a mob takes a hit
 - Respawn handling: defeated mobs come back to life at their spawn point after
   a short delay, and mobs occasionally hit back — a player defeated in combat
