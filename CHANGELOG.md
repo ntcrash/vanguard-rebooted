@@ -7,6 +7,21 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Deployment guide for hosting the server on a cloud provider: new
+  [`DEPLOYMENT.md`](./DEPLOYMENT.md) covering host options (Render, Railway,
+  Fly.io, or a plain VPS) for the stateful Socket.io server, required/
+  recommended environment variables, why `server/data/` (accounts + player
+  saves) needs a genuinely persistent volume rather than the platform's
+  ephemeral filesystem, building and hosting the static Vite client
+  separately (with `VITE_SERVER_URL` baked in at build time, not runtime),
+  reverse-proxy/WebSocket-upgrade notes for a self-managed VPS, and a
+  post-deploy verification checklist. Also hardened
+  `server/index.js`'s Socket.io CORS config: it previously hardcoded
+  `origin: "*"` (any site could open a socket to it) with a comment saying
+  to tighten it before real deployment; it now reads an optional
+  `CORS_ORIGIN` env var (comma-separated list of allowed origins) and only
+  falls back to `"*"` when that's unset, so local development is unaffected
+  but a production deploy can lock it down per DEPLOYMENT.md.
 - Walk/run character animation instead of a static primitive-shape sliding
   around: `client/src/player.js`'s character mesh now has hinged leg pivots
   (hip-mounted capsules, previously just one floor-to-head torso capsule with
