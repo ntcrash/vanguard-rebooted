@@ -5,6 +5,7 @@ import { Mob } from "./mob.js";
 import { initInput, keys, mouse, attack as attackInput } from "./input.js";
 import { connectToServer } from "./network.js";
 import { initChat } from "./chat.js";
+import { DamageNumbers } from "./damageNumbers.js";
 
 const canvas = document.getElementById("scene");
 const statusEl = document.getElementById("status");
@@ -54,6 +55,7 @@ const remotePlayers = new Map(); // id -> RemotePlayer
 const mobs = new Map(); // id -> Mob
 const labelEls = new Map(); // id -> HTMLDivElement (name tag), shared by players + mobs
 const healthBarEls = new Map(); // id -> { outer, fill } HTMLDivElements, shared by players + mobs
+const damageNumbers = new DamageNumbers(labelsEl);
 
 function makeLabel(text, variant) {
   const div = document.createElement("div");
@@ -180,12 +182,18 @@ net = connectToServer({
   onMobDamaged: (data) => {
     const mob = mobs.get(data.id);
     if (mob) {
+      const dmg = mob.hp - data.hp;
       mob.applyDamage(data.hp);
       setHealthBarHp(data.id, mob.hp, mob.maxHp);
+      damageNumbers.spawn(mob.headWorldPosition(_dmgPos), dmg);
     }
   },
 
   onMobDied: (data) => {
+    const mob = mobs.get(data.id);
+    if (mob && mob.hp > 0) {
+      damageNumbers.spawn(mob.headWorldPosition(_dmgPos), mob.hp, { finishing: true });
+    }
     despawnMob(data.id);
     chat.addSystemLine(`${data.name} was defeated${data.killedBy ? ` by ${data.killedBy}` : ""}.`);
   },
@@ -232,6 +240,7 @@ const _right = new THREE.Vector3();
 const _move = new THREE.Vector3();
 const _headPos = new THREE.Vector3();
 const _healthPos = new THREE.Vector3();
+const _dmgPos = new THREE.Vector3();
 const _screen = new THREE.Vector3();
 
 const WORLD_BOUNDS = 90;
@@ -409,6 +418,7 @@ function animate() {
 
   maybeSendMove(performance.now());
   updateLabels();
+  damageNumbers.update(camera, window.innerWidth, window.innerHeight);
 
   renderer.render(scene, camera);
 }

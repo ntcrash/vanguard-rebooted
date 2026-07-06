@@ -7,6 +7,11 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Damage numbers: floating combat text pops up above a mob and rises/fades
+  whenever it takes a hit, showing the exact damage dealt
+  (`client/src/damageNumbers.js`). Killing blows are shown larger and in a
+  distinct color. Purely a client-side visual layer driven by the existing
+  `mobDamaged`/`mobDied` events — no server or protocol changes.
 - Mob NPCs: 6 wandering boars spawn at fixed points around the world and roam
   within a radius of their spawn, server-authoritative (position + wander AI
   ticked every 200ms and broadcast as `mobsState`). Rendered client-side as a
