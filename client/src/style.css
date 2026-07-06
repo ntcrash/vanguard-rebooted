@@ -284,6 +284,85 @@ html, body {
   text-shadow: 0 0 3px #000;
 }
 
+#touch-controls {
+  display: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Coarse-pointer/no-hover roughly means "touchscreen" — shows the virtual
+   joystick + action buttons only there, leaving desktop mouse+keyboard play
+   untouched. */
+@media (pointer: coarse) {
+  #touch-controls {
+    display: block;
+  }
+}
+
+#touch-joystick-base {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+#touch-joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  background: rgba(126, 224, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+#touch-action-buttons {
+  position: absolute;
+  right: 20px;
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.touch-btn {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(14, 20, 26, 0.75);
+  color: #e8f0f5;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  user-select: none;
+  padding: 0;
+}
+
+#touch-sprint-btn {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+#touch-sprint-btn.active {
+  background: rgba(126, 224, 255, 0.35);
+  border-color: #7ee0ff;
+}
+
 #login-screen {
   position: absolute;
   inset: 0;

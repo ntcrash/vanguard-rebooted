@@ -5,7 +5,6 @@ reprioritized based on what's more fun to build/play.
 
 ## v0.5 — Polish & deployment
 
-- [ ] Mobile/touch controls
 - [ ] Enhance the graphics
 
 ## Later / stretch ideas
