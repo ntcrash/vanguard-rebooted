@@ -21,6 +21,25 @@ const PLAYER_RESPAWN_MS = 5000; // delay before a defeated player returns to the
 const AUTOSAVE_INTERVAL_MS = 60000; // periodic safety-net save of every connected player,
 // on top of the save-on-disconnect below, in case the process crashes/restarts uncleanly
 
+// ---- Anti-cheat: server-side movement validation --------------------------------
+// The client moves at up to `moveSpeed` (7 units/sec, see client/src/main.js)
+// times SPRINT_MULTIPLIER (1.8x) while sprinting -- 12.6 units/sec at most
+// under normal play. Before this, the "move" handler below just clamped
+// whatever (x, z) a client sent to WORLD_BOUNDS and broadcast it as fact, so
+// a modified client could teleport anywhere (or move arbitrarily fast every
+// tick) and every other player would see it as real. MAX_MOVE_SPEED mirrors
+// that legitimate top speed; MOVE_SPEED_TOLERANCE pads it generously to
+// absorb network jitter/latency spikes and frame-time variance without
+// flagging normal play, while still catching a hack that covers noticeably
+// more ground than any legitimate input could. MIN_MOVE_INTERVAL_SEC floors
+// the elapsed-time window at the client's own ~20Hz move-send cap
+// (client/src/main.js's maybeSendMove()), so two moves arriving suspiciously
+// close together (or with a bogus/duplicate timestamp) can't be used to
+// shrink the allowed-distance budget toward zero.
+const MAX_MOVE_SPEED = 7 * 1.8; // matches moveSpeed * SPRINT_MULTIPLIER in client/src/main.js
+const MOVE_SPEED_TOLERANCE = 1.5; // 50% buffer for latency/jitter, not a cheat allowance
+const MIN_MOVE_INTERVAL_SEC = 0.05; // matches the client's ~20Hz move-send cap
+
 // ---- Inventory ------------------------------------------------------------------
 // Server-authoritative player inventory. Item pickups scattered in the world
 // (see "Item pickups" below) call addItemToInventory() the same way the
@@ -264,6 +283,11 @@ function respawnPlayer(player) {
   player.y = 0;
   player.z = (Math.random() - 0.5) * 20;
   player.rotY = 0;
+  // The respawn teleport is legitimate (server-initiated, not client input),
+  // so reset the anti-cheat clock here too -- otherwise the player's first
+  // post-respawn "move" would be measured against the time they died, not
+  // the time they respawned, and could get incorrectly flagged.
+  player.lastMoveAt = Date.now();
   io.emit("playerRespawned", {
     id: player.id,
     x: player.x,
@@ -502,6 +526,7 @@ io.on("connection", (socket) => {
     maxHp: 100,
     alive: true,
     lastAttackAt: 0,
+    lastMoveAt: Date.now(), // anti-cheat clock -- see MAX_MOVE_SPEED above
     level: 1,
     xp: 0,
     xpToNext: xpToNextLevel(1),
@@ -565,10 +590,36 @@ io.on("connection", (socket) => {
     const { x, y, z, rotY } = data;
     if ([x, y, z, rotY].some((v) => typeof v !== "number" || !Number.isFinite(v))) return;
 
-    p.x = clamp(x, -WORLD_BOUNDS, WORLD_BOUNDS);
+    const targetX = clamp(x, -WORLD_BOUNDS, WORLD_BOUNDS);
+    const targetZ = clamp(z, -WORLD_BOUNDS, WORLD_BOUNDS);
+
+    // Anti-cheat: reject a move that covers more ground than the fastest
+    // legitimate client (sprinting, plus a generous latency/jitter buffer)
+    // could have covered since its last accepted move. This catches both a
+    // sustained speed hack (every move a bit too far) and a one-shot
+    // teleport hack (one move way too far) with the same check. A rejected
+    // move is simply dropped -- p.x/p.z/p.lastMoveAt are left untouched --
+    // and the offending socket is told the server's actual position so its
+    // client can resync instead of drifting further out of sync with every
+    // subsequent (also-rejected) move it sends.
+    const now = Date.now();
+    const elapsedSec = Math.max((now - p.lastMoveAt) / 1000, MIN_MOVE_INTERVAL_SEC);
+    const maxDist = MAX_MOVE_SPEED * MOVE_SPEED_TOLERANCE * elapsedSec;
+    const dist = Math.hypot(targetX - p.x, targetZ - p.z);
+
+    if (dist > maxDist) {
+      console.warn(
+        `[anticheat] rejected move from ${p.name}: ${dist.toFixed(1)} units in ${elapsedSec.toFixed(2)}s (max ${maxDist.toFixed(1)})`
+      );
+      socket.emit("moveRejected", { x: p.x, y: p.y, z: p.z, rotY: p.rotY });
+      return;
+    }
+
+    p.x = targetX;
     p.y = y;
-    p.z = clamp(z, -WORLD_BOUNDS, WORLD_BOUNDS);
+    p.z = targetZ;
     p.rotY = rotY;
+    p.lastMoveAt = now;
 
     socket.broadcast.emit("playerMoved", { id: socket.id, x: p.x, y: p.y, z: p.z, rotY: p.rotY });
     checkPickupCollection(p);

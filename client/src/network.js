@@ -43,6 +43,12 @@ export function connectToServer(handlers, character) {
   socket.on("playerEquipmentChanged", (data) => handlers.onPlayerEquipmentChanged?.(data));
   socket.on("playerXpGained", (data) => handlers.onPlayerXpGained?.(data));
   socket.on("playerLeveledUp", (data) => handlers.onPlayerLeveledUp?.(data));
+  // Server-side anti-cheat (see server/index.js's MAX_MOVE_SPEED) rejected a
+  // "move" this client sent as covering too much ground too fast -- either a
+  // real speed/teleport hack, or (much more commonly) a bad lag spike. Either
+  // way, the server's authoritative position comes along so the client can
+  // snap back in sync instead of silently drifting.
+  socket.on("moveRejected", (data) => handlers.onMoveRejected?.(data));
 
   return {
     sendMove(x, y, z, rotY) {

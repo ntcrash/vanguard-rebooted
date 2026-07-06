@@ -7,6 +7,29 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Basic anti-cheat / server-side movement validation: the `move` handler in
+  `server/index.js` now rejects a position update that covers more ground
+  than the fastest legitimate client could have traveled since its last
+  accepted move — `MAX_MOVE_SPEED` mirrors the client's real top speed
+  (`moveSpeed` * `SPRINT_MULTIPLIER` = 12.6 units/sec), padded by a generous
+  `MOVE_SPEED_TOLERANCE` (1.5x) so ordinary latency/jitter isn't mistaken for
+  a hack, with the elapsed-time window floored at `MIN_MOVE_INTERVAL_SEC`
+  (matching the client's own ~20Hz move-send cap) so back-to-back moves can't
+  be used to shrink the allowed distance toward zero. This catches both a
+  sustained speed hack (every move a bit too far) and a one-shot teleport
+  hack (one move way too far) with the same check — previously the server
+  only clamped an incoming `(x, z)` to `WORLD_BOUNDS` and broadcast it as
+  fact, trusting the client's position completely. A rejected move is
+  dropped server-side (the player's authoritative position is left
+  unchanged) and the offending socket receives a new `moveRejected` event
+  carrying that authoritative position/rotation; the client
+  (`client/src/network.js`, `client/src/main.js`) snaps its local player back
+  to it and forces the next tick to re-send, so a legitimate player who
+  triggered a false positive from a lag spike resyncs cleanly instead of
+  drifting further out of sync with every subsequent (also-rejected) move.
+  The respawn teleport (a legitimate, server-initiated position jump) resets
+  the same anti-cheat clock so it isn't mistaken for a hack on the player's
+  first post-respawn move.
 - Deployment guide for hosting the server on a cloud provider: new
   [`DEPLOYMENT.md`](./DEPLOYMENT.md) covering host options (Render, Railway,
   Fly.io, or a plain VPS) for the stateful Socket.io server, required/

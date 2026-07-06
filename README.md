@@ -49,6 +49,12 @@ a full game.
   progress survives reconnects and server restarts, and (now that accounts
   are password-protected) can't be reached by someone else just typing in
   your name.
+- Server-side movement validation: every position update is checked against
+  how far the fastest legitimate (sprinting) client could actually have
+  moved since its last accepted move, so a modified client can't speed-hack
+  or teleport around the map — an implausible move is dropped and the
+  player's client is snapped back in sync, generously tolerant of ordinary
+  lag so normal play is never affected.
 
 Accounts are stored alongside player saves in `server/data/accounts.json`
 (gitignored, password hashes only — never plaintext).
