@@ -7,6 +7,18 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Basic XP/leveling tied to defeating mobs: players now have `level`, `xp`,
+  and `xpToNext` fields (`server/index.js`), starting at level 1. Defeating a
+  mob awards flat XP (`MOB_XP_REWARD` = 25) via a new `awardXp()` helper,
+  which broadcasts a `playerXpGained` event so the HUD can update the XP bar.
+  Crossing the XP threshold for the current level (`xpToNextLevel()`, growing
+  by 40 XP per level on top of a 100 XP base) levels the player up — possibly
+  more than once for a single big reward — fully restores their HP, and
+  raises max HP by 10 per level, broadcasting a `playerLeveledUp` event.
+  Client-side, a new level display + XP bar sit under the attack cooldown bar
+  in the HUD (`client/index.html`, `client/src/style.css`), driven by the two
+  new socket events wired up in `client/src/main.js`/`client/src/network.js`,
+  with a chat system line announcing level-ups for everyone.
 - Equippable gear that visibly changes the character model: items can now
   have an equipment `slot` ("weapon", "head", or "body" — see `ITEM_DEFS` in
   `server/index.js`), starting with a Steel Sword, Iron Helm, and Leather

@@ -13,6 +13,8 @@ const canvas = document.getElementById("scene");
 const statusEl = document.getElementById("status");
 const labelsEl = document.getElementById("labels");
 const cooldownFillEl = document.getElementById("attack-cooldown-fill");
+const levelDisplayEl = document.getElementById("level-display");
+const xpBarFillEl = document.getElementById("xp-bar-fill");
 const inventoryPanelEl = document.getElementById("inventory-panel");
 const inventoryGridEl = document.getElementById("inventory-grid");
 const INVENTORY_SLOT_COUNT = 20; // must match server's MAX_INVENTORY_SLOTS
@@ -55,6 +57,9 @@ const local = {
   alive: true,
   moveSpeed: 7, // units/sec
   attackCooldownRemaining: 0, // seconds left before another attack can fire
+  level: 1,
+  xp: 0,
+  xpToNext: 100,
   inventory: [], // [{ itemId, name, icon, qty, slot }], server-authoritative
   equipment: { weapon: null, head: null, body: null }, // server-authoritative
 };
@@ -137,6 +142,15 @@ function setHealthBarHp(id, hp, maxHp) {
   bar.fill.classList.toggle("low", pct <= 35);
 }
 
+/** Refreshes the local player's level/XP HUD from local.level/xp/xpToNext. */
+function updateXpUI() {
+  if (levelDisplayEl) levelDisplayEl.textContent = `Level ${local.level}`;
+  if (xpBarFillEl) {
+    const pct = local.xpToNext > 0 ? Math.max(0, Math.min(1, local.xp / local.xpToNext)) * 100 : 0;
+    xpBarFillEl.style.width = `${pct}%`;
+  }
+}
+
 // ---- Chat -----------------------------------------------------------------------
 
 const chat = initChat((text) => {
@@ -168,7 +182,11 @@ function startGame(character) {
       local.alive = data.self.alive ?? true;
       local.inventory = data.self.inventory || [];
       local.equipment = data.self.equipment || { weapon: null, head: null, body: null };
+      local.level = data.self.level ?? 1;
+      local.xp = data.self.xp ?? 0;
+      local.xpToNext = data.self.xpToNext ?? 100;
       renderInventory();
+      updateXpUI();
 
       local.mesh = createCharacterMesh(data.self.color, local.equipment);
       local.mesh.position.set(data.self.x, data.self.y, data.self.z);
@@ -357,6 +375,33 @@ function startGame(character) {
       } else {
         const rp = remotePlayers.get(data.id);
         if (rp) rp.setEquipment(data.equipment);
+      }
+    },
+
+    onPlayerXpGained: (data) => {
+      if (data.id !== local.id) return; // only the local player's HUD needs XP updates
+      local.xp = data.xp;
+      local.xpToNext = data.xpToNext;
+      local.level = data.level;
+      updateXpUI();
+    },
+
+    onPlayerLeveledUp: (data) => {
+      if (data.id === local.id) {
+        local.level = data.level;
+        local.hp = data.hp;
+        local.maxHp = data.maxHp;
+        updateXpUI();
+        setHealthBarHp(local.id, local.hp, local.maxHp);
+        chat.addSystemLine(`You reached level ${data.level}!`);
+      } else {
+        const rp = remotePlayers.get(data.id);
+        if (rp) {
+          rp.hp = data.hp;
+          rp.maxHp = data.maxHp;
+          setHealthBarHp(data.id, rp.hp, rp.maxHp);
+        }
+        chat.addSystemLine(`${data.name} reached level ${data.level}!`);
       }
     },
   }, character);

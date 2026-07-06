@@ -277,6 +277,55 @@ app.get("/health", (_req, res) =>
   res.json({ ok: true, players: players.size, mobs: mobs.size, mobsAlive: Array.from(mobs.values()).filter((m) => m.alive).length })
 );
 
+// ---- XP / leveling ---------------------------------------------------------------
+// Simple, server-authoritative XP curve tied to defeating mobs. Leveling up
+// fully heals the player and bumps their max HP a little — a real (if
+// modest) reason to grind mobs beyond just gear/gold drops.
+const MOB_XP_REWARD = 25; // XP awarded to a mob's killer
+const XP_BASE = 100; // XP required to go from level 1 to level 2
+const XP_GROWTH_PER_LEVEL = 40; // each subsequent level requires this much more XP than the last
+const LEVEL_MAX_HP_BONUS = 10; // maxHp gained per level up
+
+/** XP required to advance from `level` to `level + 1`. */
+function xpToNextLevel(level) {
+  return XP_BASE + (level - 1) * XP_GROWTH_PER_LEVEL;
+}
+
+/** Awards `amount` XP to `player`, applying any level-ups (a big reward could
+ * cross more than one threshold at once) and broadcasting the result so
+ * every client can update level/XP UI. */
+function awardXp(player, amount) {
+  player.xp += amount;
+  let leveledUp = false;
+
+  while (player.xp >= player.xpToNext) {
+    player.xp -= player.xpToNext;
+    player.level += 1;
+    player.maxHp += LEVEL_MAX_HP_BONUS;
+    player.hp = player.maxHp; // level-up fully restores HP
+    player.xpToNext = xpToNextLevel(player.level);
+    leveledUp = true;
+  }
+
+  io.emit("playerXpGained", {
+    id: player.id,
+    xp: player.xp,
+    xpToNext: player.xpToNext,
+    level: player.level,
+    gained: amount,
+  });
+
+  if (leveledUp) {
+    io.emit("playerLeveledUp", {
+      id: player.id,
+      name: player.name,
+      level: player.level,
+      hp: player.hp,
+      maxHp: player.maxHp,
+    });
+  }
+}
+
 /** @type {Map<string, {id: string, name: string, color: string, x: number, y: number, z: number, rotY: number}>} */
 const players = new Map();
 
@@ -331,6 +380,9 @@ io.on("connection", (socket) => {
     maxHp: 100,
     alive: true,
     lastAttackAt: 0,
+    level: 1,
+    xp: 0,
+    xpToNext: xpToNextLevel(1),
     inventory: [],
     // Equippable gear currently worn, one item id (or null) per slot. Drives
     // the visible character model on every client via "playerEquipmentChanged".
@@ -396,6 +448,7 @@ io.on("connection", (socket) => {
       mob.alive = false;
       io.emit("mobDied", { id: mob.id, name: mob.name, killedBy: p.name });
       setTimeout(() => respawnMob(mob), MOB_RESPAWN_MS);
+      awardXp(p, MOB_XP_REWARD);
       return;
     }
 

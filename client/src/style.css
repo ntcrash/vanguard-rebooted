@@ -108,6 +108,29 @@ html, body {
   background: #7ee0ff;
 }
 
+#level-display {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 6px;
+  color: #ffd76b;
+}
+
+#xp-bar {
+  margin-top: 2px;
+  width: 160px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+#xp-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: #ffd76b;
+  transition: width 0.2s ease;
+}
+
 #chat {
   position: absolute;
   bottom: 14px;
