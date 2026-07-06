@@ -11,13 +11,14 @@ const ATTACK_COOLDOWN_MS = 550; // slightly under the client's 600ms to allow fo
 const PLAYER_RESPAWN_MS = 5000; // delay before a defeated player returns to the world
 
 // ---- Inventory ------------------------------------------------------------------
-// Server-authoritative player inventory. Item pickups in the world (a later
-// roadmap item) will call addItemToInventory() the same way the starter kit
-// below does — the client only ever renders what the server tells it.
+// Server-authoritative player inventory. Item pickups scattered in the world
+// (see "Item pickups" below) call addItemToInventory() the same way the
+// starter kit does — the client only ever renders what the server tells it.
 const MAX_INVENTORY_SLOTS = 20;
 const ITEM_DEFS = {
   "rusty-sword": { name: "Rusty Sword", icon: "⚔️" },
   "health-draught": { name: "Health Draught", icon: "🧪" },
+  "gold-coin": { name: "Gold Coin", icon: "🪙" },
 };
 
 /** Adds `qty` of `itemId` to a player's inventory, stacking onto an existing
@@ -37,6 +38,89 @@ function addItemToInventory(player, itemId, qty = 1) {
 
   player.inventory.push({ itemId, name: def.name, icon: def.icon, qty });
   return true;
+}
+
+// ---- Item pickups (world) -------------------------------------------------------
+// Static item pickups scattered around the world. Walking within
+// PICKUP_COLLECT_RANGE of one automatically loots it into the player's
+// inventory (addItemToInventory) and it respawns after PICKUP_RESPAWN_MS,
+// mirroring the mob respawn pattern below. No dedicated "loot" key/event is
+// needed — collection is checked server-side after every validated move.
+const PICKUP_COLLECT_RANGE = 2.2;
+const PICKUP_RESPAWN_MS = 20000;
+const PICKUP_SPAWNS = [
+  { x: 0, z: 0, itemId: "health-draught", qty: 2 },
+  { x: 40, z: 40, itemId: "gold-coin", qty: 5 },
+  { x: -40, z: -40, itemId: "health-draught", qty: 1 },
+  { x: 60, z: -20, itemId: "gold-coin", qty: 3 },
+  { x: -60, z: 20, itemId: "health-draught", qty: 2 },
+  { x: 20, z: -60, itemId: "gold-coin", qty: 4 },
+  { x: -20, z: 60, itemId: "health-draught", qty: 1 },
+  { x: 0, z: -80, itemId: "gold-coin", qty: 6 },
+];
+
+/** @type {Map<string, object>} */
+const pickups = new Map();
+
+function spawnPickups() {
+  PICKUP_SPAWNS.forEach((spawn, i) => {
+    const def = ITEM_DEFS[spawn.itemId];
+    pickups.set(`pickup-${i}`, {
+      id: `pickup-${i}`,
+      itemId: spawn.itemId,
+      name: def.name,
+      icon: def.icon,
+      qty: spawn.qty,
+      x: spawn.x,
+      y: 0,
+      z: spawn.z,
+      alive: true,
+    });
+  });
+}
+
+function pickupsSnapshot() {
+  return Array.from(pickups.values()).filter((p) => p.alive);
+}
+
+/** Brings a collected pickup back after PICKUP_RESPAWN_MS. */
+function respawnPickup(pickup) {
+  pickup.alive = true;
+  io.emit("pickupRespawned", {
+    id: pickup.id,
+    itemId: pickup.itemId,
+    name: pickup.name,
+    icon: pickup.icon,
+    qty: pickup.qty,
+    x: pickup.x,
+    y: pickup.y,
+    z: pickup.z,
+  });
+}
+
+/** Checks alive pickups near `player` and loots any within range. Called
+ * after every server-validated move. */
+function checkPickupCollection(player) {
+  for (const pickup of pickups.values()) {
+    if (!pickup.alive) continue;
+    const dist = Math.hypot(pickup.x - player.x, pickup.z - player.z);
+    if (dist > PICKUP_COLLECT_RANGE) continue;
+
+    if (!addItemToInventory(player, pickup.itemId, pickup.qty)) continue; // inventory full — leave it in the world
+
+    pickup.alive = false;
+    io.emit("itemPickedUp", {
+      id: pickup.id,
+      playerId: player.id,
+      playerName: player.name,
+      itemId: pickup.itemId,
+      name: pickup.name,
+      icon: pickup.icon,
+      qty: pickup.qty,
+    });
+    io.to(player.id).emit("inventoryUpdated", { inventory: player.inventory });
+    setTimeout(() => respawnPickup(pickup), PICKUP_RESPAWN_MS);
+  }
 }
 
 // ---- Mob NPCs -----------------------------------------------------------------
@@ -252,6 +336,7 @@ io.on("connection", (socket) => {
     self: player,
     players: Array.from(players.values()),
     mobs: mobsSnapshot(),
+    pickups: pickupsSnapshot(),
   });
 
   // Tell everyone else a new player arrived.
@@ -269,6 +354,7 @@ io.on("connection", (socket) => {
     p.rotY = rotY;
 
     socket.broadcast.emit("playerMoved", { id: socket.id, x: p.x, y: p.y, z: p.z, rotY: p.rotY });
+    checkPickupCollection(p);
   });
 
   socket.on("attack", (data) => {
@@ -331,6 +417,7 @@ io.on("connection", (socket) => {
 });
 
 spawnMobs();
+spawnPickups();
 setInterval(tickMobs, MOB_TICK_MS);
 
 httpServer.listen(PORT, () => {

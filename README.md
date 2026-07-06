@@ -21,6 +21,9 @@ a full game.
 - Basic melee attack (click or `F`/`Space`) with a cooldown, synced to other players
 - Player inventory: a server-tracked item inventory with a toggleable panel
   (`I`); new players start with a small kit of items
+- Item pickups: glowing gems scattered around the world (health draughts,
+  gold coins) that are automatically looted into your inventory when you
+  walk over them, and respawn after a short delay
 - Mob NPCs: wandering boars scattered around the world that can be attacked and
   defeated (auto-targeted when one's in range and roughly in front of you)
 - Floating damage numbers pop up whenever a mob takes a hit
