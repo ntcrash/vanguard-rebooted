@@ -19,6 +19,8 @@ a full game.
 - Name tags floating above each character
 - Health bars floating above each character and mob
 - Basic melee attack (click or `F`/`Space`) with a cooldown, synced to other players
+- Player inventory: a server-tracked item inventory with a toggleable panel
+  (`I`); new players start with a small kit of items
 - Mob NPCs: wandering boars scattered around the world that can be attacked and
   defeated (auto-targeted when one's in range and roughly in front of you)
 - Floating damage numbers pop up whenever a mob takes a hit
@@ -79,6 +81,7 @@ VITE_SERVER_URL=http://192.168.1.23:3000
 | Mouse drag              | Orbit camera around your character |
 | Scroll wheel            | Zoom camera in/out               |
 | Click (no drag) / `F` / `Space` | Melee attack (cooldown applies) |
+| `I`                     | Toggle inventory panel           |
 | `Enter`                 | Focus chat box / send message    |
 | `Esc`                   | Clear & unfocus chat box          |
 

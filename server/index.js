@@ -10,6 +10,35 @@ const WORLD_BOUNDS = 90; // players are clamped to +/- this on X/Z
 const ATTACK_COOLDOWN_MS = 550; // slightly under the client's 600ms to allow for latency jitter
 const PLAYER_RESPAWN_MS = 5000; // delay before a defeated player returns to the world
 
+// ---- Inventory ------------------------------------------------------------------
+// Server-authoritative player inventory. Item pickups in the world (a later
+// roadmap item) will call addItemToInventory() the same way the starter kit
+// below does — the client only ever renders what the server tells it.
+const MAX_INVENTORY_SLOTS = 20;
+const ITEM_DEFS = {
+  "rusty-sword": { name: "Rusty Sword", icon: "⚔️" },
+  "health-draught": { name: "Health Draught", icon: "🧪" },
+};
+
+/** Adds `qty` of `itemId` to a player's inventory, stacking onto an existing
+ * slot if one exists. Returns false (adding nothing) if the item id is
+ * unknown or the inventory has no free slot for a new stack. */
+function addItemToInventory(player, itemId, qty = 1) {
+  const def = ITEM_DEFS[itemId];
+  if (!def) return false;
+
+  const existing = player.inventory.find((slot) => slot.itemId === itemId);
+  if (existing) {
+    existing.qty += qty;
+    return true;
+  }
+
+  if (player.inventory.length >= MAX_INVENTORY_SLOTS) return false;
+
+  player.inventory.push({ itemId, name: def.name, icon: def.icon, qty });
+  return true;
+}
+
 // ---- Mob NPCs -----------------------------------------------------------------
 // Simple wandering mobs that players can attack and defeat. Defeated mobs
 // respawn at their home spawn point after MOB_RESPAWN_MS.
@@ -207,7 +236,12 @@ io.on("connection", (socket) => {
     maxHp: 100,
     alive: true,
     lastAttackAt: 0,
+    inventory: [],
   };
+  // Starter kit so the inventory panel has something to show before item
+  // pickups (a later roadmap item) exist in the world.
+  addItemToInventory(player, "rusty-sword", 1);
+  addItemToInventory(player, "health-draught", 3);
   players.set(socket.id, player);
 
   console.log(`[join] ${player.name} (${socket.id}) — ${players.size} online`);

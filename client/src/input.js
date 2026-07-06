@@ -14,6 +14,10 @@ export const mouse = {
 // keybind, and cleared by main.js once it's been consumed for a frame.
 export const attack = { requested: false };
 
+// Edge-triggered inventory-panel toggle: set true on the inventory keybind,
+// and cleared by main.js once it's been consumed for a frame.
+export const inventoryToggle = { requested: false };
+
 function chatFocused() {
   return document.activeElement && document.activeElement.id === "chat-input";
 }
@@ -46,6 +50,10 @@ export function initInput(canvas) {
     if (e.code === "Space" || e.code === "KeyF") {
       e.preventDefault();
       attack.requested = true;
+    }
+    if (e.code === "KeyI") {
+      e.preventDefault();
+      inventoryToggle.requested = true;
     }
   });
 
