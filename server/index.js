@@ -170,11 +170,35 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+// ---- Character creation (name/color chosen on the client's login screen) ------
+const NAME_PATTERN = /^[A-Za-z0-9 _-]{1,20}$/;
+const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+const HSL_COLOR_PATTERN = /^hsl\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*\)$/;
+
+/** Returns a trimmed, validated name from client auth, or null if invalid/absent. */
+function sanitizeChosenName(raw) {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return NAME_PATTERN.test(trimmed) ? trimmed : null;
+}
+
+/** Returns a validated color string from client auth, or null if invalid/absent. */
+function sanitizeChosenColor(raw) {
+  if (typeof raw !== "string") return null;
+  if (HEX_COLOR_PATTERN.test(raw) || HSL_COLOR_PATTERN.test(raw)) return raw;
+  return null;
+}
+
 io.on("connection", (socket) => {
+  // Name/color chosen on the client's character-creation screen (see
+  // client/src/characterCreate.js), sent as socket.io auth. Falls back to a
+  // randomly generated guest name/color if missing or invalid — this keeps
+  // older clients (and malformed auth payloads) working.
+  const auth = socket.handshake.auth || {};
   const player = {
     id: socket.id,
-    name: randomName(),
-    color: randomColor(),
+    name: sanitizeChosenName(auth.name) || randomName(),
+    color: sanitizeChosenColor(auth.color) || randomColor(),
     x: (Math.random() - 0.5) * 20,
     y: 0,
     z: (Math.random() - 0.5) * 20,

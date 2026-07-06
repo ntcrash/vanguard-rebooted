@@ -5,9 +5,16 @@ const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
 /**
  * Thin wrapper around the socket.io connection. Callbacks are set once by
  * main.js; this module just centralizes the event names in one place.
+ *
+ * `character` (optional) is the { name, color } chosen on the character
+ * creation screen; it's sent as socket.io auth payload so the server can use
+ * it instead of generating a random name/color for this session.
  */
-export function connectToServer(handlers) {
-  const socket = io(SERVER_URL, { transports: ["websocket", "polling"] });
+export function connectToServer(handlers, character) {
+  const socket = io(SERVER_URL, {
+    transports: ["websocket", "polling"],
+    auth: character ? { name: character.name, color: character.color } : {},
+  });
 
   socket.on("connect", () => handlers.onConnect?.(socket.id));
   socket.on("disconnect", () => handlers.onDisconnect?.());
