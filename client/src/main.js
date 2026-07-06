@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { buildWorld } from "./world.js";
+import { buildWorld, torchFlicker } from "./world.js";
 import {
   createCharacterMesh,
   applyEquipment,
@@ -37,9 +37,21 @@ const MOB_ATTACK_FACING_DOT = 0.3; // mob must be roughly in front of the player
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
+// PCFSoftShadowMap trades a little perf for noticeably softer shadow edges
+// than the default PCF map — worth it since shadow area here is small
+// (single sun light, capped shadow camera frustum in world.js).
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// ACESFilmic + sRGB output: without a tone-mapping curve, the sun's 1.4
+// intensity directional light blows out highlights on white/pale materials
+// (character armor, stone pillars) to flat white. ACESFilmic rolls off
+// highlights more like a camera would, and sRGB output color space is the
+// correct/expected pairing for it in three r152+.
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-buildWorld(scene);
+const { torches } = buildWorld(scene);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
 const cameraState = { azimuth: Math.PI, elevation: 0.45, distance: 8 };
@@ -692,6 +704,9 @@ function animate() {
   updateLocalAttack(dt);
   updateInventoryToggle();
   updateZoneLabel();
+  for (const torch of torches) {
+    torch.light.intensity = torchFlicker(clock.elapsedTime, torch.seed);
+  }
 
   for (const rp of remotePlayers.values()) rp.update(dt);
   for (const mob of mobs.values()) mob.update(dt);

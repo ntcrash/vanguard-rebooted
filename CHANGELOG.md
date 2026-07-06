@@ -7,6 +7,38 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Enhanced world/rendering graphics: a gradient sky dome (`buildSky()` in
+  `client/src/world.js`, a large `BackSide` sphere with a vertical-gradient
+  `ShaderMaterial`) replaces the previous flat `scene.background` color, so
+  the sky actually reads as sky instead of a solid-colored void; fog color
+  now matches the dome's horizon color instead of its old flat sky color so
+  distance fog blends into the dome without a visible seam. The renderer
+  gained `PCFSoftShadowMap` (softer shadow edges), `ACESFilmicToneMapping` +
+  `SRGBColorSpace` output (rolls off highlight blowout on pale materials like
+  armor/stone under the sun light more like a camera would) in
+  `client/src/main.js`. The meadow/forest boundary gateway pillars each now
+  carry a brazier bowl mesh and a warm flickering `PointLight`
+  (`torchFlicker()`, a deterministic dual-sine function driven by
+  `clock.elapsedTime` rather than `Math.random()`, so it's frame-rate
+  independent and unit-testable) instead of being unlit stone posts. The
+  meadow also gained ~600 InstancedMesh grass-blade tufts
+  (`generateGrassPositions()`, deterministic/seeded, clamped short of the
+  forest boundary) as one extra draw call instead of one Mesh per blade.
+  Verified with a standalone Node script (using the `three` package present
+  in `client/node_modules`) directly exercising `skyGradientMixFactor`
+  (zenith/horizon/straight-down/exponent-steepness cases — kept in exact sync
+  with the sky dome's GLSL fragment shader), `torchFlicker` (determinism,
+  never drops below its floor across a dense time sweep, two different seeds
+  desync from each other), and `generateGrassPositions` (exact count,
+  in-bounds/clamped positions, deterministic per seed, different seed ⇒
+  different layout); also constructed a real `THREE.Scene` via `buildWorld()`
+  in that same script and confirmed via `scene.traverse()` that the sky mesh,
+  both torch point lights, and the grass `InstancedMesh` (with the right
+  instance count) actually end up in the scene graph, and confirmed
+  `PCFSoftShadowMap`/`ACESFilmicToneMapping`/`SRGBColorSpace` all exist as
+  constants in the installed three r164. This was the only item in v0.5
+  "Polish & deployment", so that section heading was removed from
+  `ROADMAP.md` along with the item.
 - Mobile/touch controls: a virtual joystick (`#touch-joystick-base`/`-knob`)
   drives movement by converting finger offset from the base's center into
   the same `forward`/`back`/`left`/`right` booleans WASD already produces
