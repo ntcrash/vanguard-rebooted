@@ -19,6 +19,9 @@ export function connectToServer(handlers) {
   socket.on("playerLeft", (data) => handlers.onPlayerLeft?.(data));
   socket.on("chat", (data) => handlers.onChat?.(data));
   socket.on("playerAttacked", (data) => handlers.onPlayerAttacked?.(data));
+  socket.on("mobsState", (data) => handlers.onMobsState?.(data));
+  socket.on("mobDamaged", (data) => handlers.onMobDamaged?.(data));
+  socket.on("mobDied", (data) => handlers.onMobDied?.(data));
 
   return {
     sendMove(x, y, z, rotY) {
@@ -27,8 +30,8 @@ export function connectToServer(handlers) {
     sendChat(text) {
       socket.emit("chat", text);
     },
-    sendAttack() {
-      socket.emit("attack");
+    sendAttack(targetMobId) {
+      socket.emit("attack", targetMobId ? { targetMobId } : undefined);
     },
     raw: socket,
   };

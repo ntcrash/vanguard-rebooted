@@ -43,6 +43,10 @@ html, body {
   color: #7ee0ff;
 }
 
+.player-label.mob {
+  color: #ff9d6e;
+}
+
 .health-bar {
   width: 46px;
   height: 5px;

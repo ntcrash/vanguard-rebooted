@@ -16,8 +16,10 @@ a full game.
 - WASD (or arrow key) movement, camera-relative
 - Global text chat
 - Name tags floating above each character
-- Health bars floating above each character (server-tracked HP, currently always full — damage isn't wired up yet)
+- Health bars floating above each character and mob
 - Basic melee attack (click or `F`/`Space`) with a cooldown, synced to other players
+- Mob NPCs: wandering boars scattered around the world that can be attacked and
+  defeated (auto-targeted when one's in range and roughly in front of you)
 
 Not included yet — see [ROADMAP.md](./ROADMAP.md).
 
