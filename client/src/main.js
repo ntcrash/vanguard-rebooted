@@ -10,7 +10,7 @@ import {
 } from "./player.js";
 import { Mob } from "./mob.js";
 import { Pickup } from "./pickup.js";
-import { initInput, keys, mouse, attack as attackInput, inventoryToggle } from "./input.js";
+import { initInput, keys, mouse, attack as attackInput, inventoryToggle, questLogToggle } from "./input.js";
 import { connectToServer } from "./network.js";
 import { initChat } from "./chat.js";
 import { DamageNumbers } from "./damageNumbers.js";
@@ -27,6 +27,8 @@ const xpBarFillEl = document.getElementById("xp-bar-fill");
 const inventoryPanelEl = document.getElementById("inventory-panel");
 const inventoryGridEl = document.getElementById("inventory-grid");
 const INVENTORY_SLOT_COUNT = 20; // must match server's MAX_INVENTORY_SLOTS
+const questPanelEl = document.getElementById("quest-panel");
+const questListEl = document.getElementById("quest-list");
 
 const ATTACK_COOLDOWN = 0.6; // seconds between local attacks
 const SPRINT_MULTIPLIER = 1.8; // hold Shift (input.js's keys.sprint) to move+animate this much faster
@@ -84,7 +86,13 @@ const local = {
   xpToNext: 100,
   inventory: [], // [{ itemId, name, icon, qty, slot }], server-authoritative
   equipment: { weapon: null, head: null, body: null }, // server-authoritative
+  quests: {}, // { [questId]: { progress, completed } }, server-authoritative
 };
+
+// Static quest definitions ({ id, name, description, count, ... }), sent
+// once on "init" — server/quests.js's QUEST_DEFS. Doesn't change per player,
+// unlike local.quests' progress, so it's kept separate from `local`.
+let questDefs = {};
 
 const remotePlayers = new Map(); // id -> RemotePlayer
 const mobs = new Map(); // id -> Mob
@@ -93,6 +101,7 @@ const labelEls = new Map(); // id -> HTMLDivElement (name tag), shared by player
 const healthBarEls = new Map(); // id -> { outer, fill } HTMLDivElements, shared by players + mobs
 const damageNumbers = new DamageNumbers(labelsEl);
 let inventoryOpen = false;
+let questLogOpen = false;
 
 /** Rebuilds the inventory panel's grid from local.inventory, padding out to
  * INVENTORY_SLOT_COUNT empty slots so unused capacity is visible. */
@@ -136,6 +145,31 @@ function updateInventoryToggle() {
   inventoryToggle.requested = false;
   inventoryOpen = !inventoryOpen;
   if (inventoryPanelEl) inventoryPanelEl.classList.toggle("hidden", !inventoryOpen);
+}
+
+/** Rebuilds the quest log panel from questDefs (static) + local.quests
+ * (this player's live progress against each one), in questDefs' insertion
+ * order so the list doesn't reshuffle as quests complete. */
+function renderQuestLog() {
+  if (!questListEl) return;
+  questListEl.innerHTML = "";
+  for (const [id, def] of Object.entries(questDefs)) {
+    const q = local.quests[id] || { progress: 0, completed: false };
+    const div = document.createElement("div");
+    div.className = "quest-entry" + (q.completed ? " completed" : "");
+    div.innerHTML =
+      `<div class="quest-name">${def.name}${q.completed ? " ✓" : ""}</div>` +
+      `<div class="quest-desc">${def.description}</div>` +
+      `<div class="quest-progress">${Math.min(q.progress, def.count)}/${def.count}</div>`;
+    questListEl.appendChild(div);
+  }
+}
+
+function updateQuestLogToggle() {
+  if (!questLogToggle.requested) return;
+  questLogToggle.requested = false;
+  questLogOpen = !questLogOpen;
+  if (questPanelEl) questPanelEl.classList.toggle("hidden", !questLogOpen);
 }
 
 function makeLabel(text, variant) {
@@ -216,7 +250,10 @@ function startGame(character) {
       local.level = data.self.level ?? 1;
       local.xp = data.self.xp ?? 0;
       local.xpToNext = data.self.xpToNext ?? 100;
+      local.quests = data.self.quests || {};
+      questDefs = data.questDefs || {};
       renderInventory();
+      renderQuestLog();
       updateXpUI();
 
       local.mesh = createCharacterMesh(data.self.color, local.equipment);
@@ -449,6 +486,20 @@ function startGame(character) {
         }
         chat.addSystemLine(`${data.name} reached level ${data.level}!`);
       }
+    },
+
+    // Personal — only this player's quests advance, so no id check is
+    // needed the way remote-vs-local branches elsewhere in this file do.
+    onQuestProgress: (data) => {
+      local.quests[data.id] = { progress: data.progress, completed: data.completed };
+      renderQuestLog(); // matches renderInventory()'s always-refresh pattern, cheap DOM rebuild
+    },
+
+    // Broadcast to everyone (mirrors the level-up chat announcement above),
+    // so the whole server sees someone finish a quest.
+    onQuestCompleted: (data) => {
+      const who = data.id === local.id ? "You" : data.name;
+      chat.addSystemLine(`${who} completed the quest: ${data.questName}!`);
     },
   }, character);
 }
@@ -716,6 +767,7 @@ function animate() {
   updateLocalPlayer(dt);
   updateLocalAttack(dt);
   updateInventoryToggle();
+  updateQuestLogToggle();
   updateZoneLabel();
 
   const dayNight = updateDayNight(scene, sky, sun, hemi, clock.elapsedTime);

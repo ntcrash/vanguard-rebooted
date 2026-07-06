@@ -6,6 +6,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { loadPlayerRecord, savePlayerRecord, savePlayerRecords } from "./playerStore.js";
 import { resolveLogin } from "./accountStore.js";
+import { QUEST_DEFS, initQuestState, advanceKillQuests, advanceCollectQuests } from "./quests.js";
 
 const PORT = process.env.PORT || 3000;
 const WORLD_BOUNDS = 170; // players are clamped to +/- this on X/Z
@@ -171,6 +172,14 @@ function checkPickupCollection(player) {
     });
     io.to(player.id).emit("inventoryUpdated", { inventory: player.inventory });
     setTimeout(() => respawnPickup(pickup), PICKUP_RESPAWN_MS);
+
+    // A "collect" quest (see server/quests.js) tracking this item id advances
+    // by the stack's qty, same as the inventory it's simultaneously landing in.
+    const affectedQuests = advanceCollectQuests(player.quests, pickup.itemId, pickup.qty);
+    for (const questId of affectedQuests) {
+      emitQuestProgress(player, questId);
+      if (player.quests[questId].completed) grantQuestReward(player, questId);
+    }
   }
 }
 
@@ -389,6 +398,43 @@ function awardXp(player, amount) {
   }
 }
 
+// ---- Simple quest system -----------------------------------------------------
+// Quest *definitions* (name/description/targets/rewards) and the pure
+// progress-tracking math live in server/quests.js so they can be unit-tested
+// without booting the socket.io server; the two helpers below are the side-
+// effecting glue that actually notifies clients and grants rewards, so they
+// stay here alongside awardXp()/addItemToInventory() which they call into.
+
+/** Tells just `player`'s own client how a quest's progress changed (the
+ * quest log is personal, not broadcast — see client/src/main.js's
+ * renderQuestLog()). */
+function emitQuestProgress(player, questId) {
+  const q = player.quests[questId];
+  const def = QUEST_DEFS[questId];
+  io.to(player.id).emit("questProgress", {
+    id: questId,
+    progress: q.progress,
+    count: def.count,
+    completed: q.completed,
+  });
+}
+
+/** Grants a completed quest's XP + item rewards (reusing the same
+ * awardXp()/addItemToInventory() a mob kill or item pickup would use) and
+ * broadcasts a "questCompleted" event so everyone's chat log shows it, the
+ * same way a level-up is announced to the whole world. Called exactly once
+ * per quest per player, right when advanceKillQuests()/advanceCollectQuests()
+ * report it just flipped to completed. */
+function grantQuestReward(player, questId) {
+  const def = QUEST_DEFS[questId];
+  if (def.rewardXp) awardXp(player, def.rewardXp);
+  for (const item of def.rewardItems || []) {
+    addItemToInventory(player, item.itemId, item.qty);
+  }
+  io.to(player.id).emit("inventoryUpdated", { inventory: player.inventory });
+  io.emit("questCompleted", { id: player.id, name: player.name, questId, questName: def.name });
+}
+
 /** @type {Map<string, {id: string, name: string, color: string, x: number, y: number, z: number, rotY: number}>} */
 const players = new Map();
 
@@ -421,6 +467,7 @@ function playerSaveRecord(player) {
     hp: player.hp,
     inventory: player.inventory,
     equipment: player.equipment,
+    quests: player.quests,
     x: player.x,
     y: player.y,
     z: player.z,
@@ -534,6 +581,10 @@ io.on("connection", (socket) => {
     // Equippable gear currently worn, one item id (or null) per slot. Drives
     // the visible character model on every client via "playerEquipmentChanged".
     equipment: { weapon: null, head: null, body: null },
+    // Per-quest { progress, completed } state, one entry per server/quests.js
+    // QUEST_DEFS id — overwritten just below once `saved` is known, so a
+    // returning player's actual progress (not a blank slate) is used.
+    quests: initQuestState(null),
   };
 
   if (saved) {
@@ -553,6 +604,10 @@ io.on("connection", (socket) => {
     if (typeof saved.x === "number") player.x = clamp(saved.x, -WORLD_BOUNDS, WORLD_BOUNDS);
     if (typeof saved.z === "number") player.z = clamp(saved.z, -WORLD_BOUNDS, WORLD_BOUNDS);
     if (typeof saved.rotY === "number") player.rotY = saved.rotY;
+    // initQuestState() overlays saved.quests onto a fresh state built from
+    // the current QUEST_DEFS, so a quest added after this player last saved
+    // still shows up (at 0 progress) instead of being missing entirely.
+    player.quests = initQuestState(saved.quests);
     console.log(`[restore] ${player.name} restored (level ${player.level}, ${player.inventory.length} item stack(s))`);
   } else {
     // First time we've seen this name — starter kit so the inventory panel
@@ -579,6 +634,11 @@ io.on("connection", (socket) => {
     players: Array.from(players.values()),
     mobs: mobsSnapshot(),
     pickups: pickupsSnapshot(),
+    // Static quest definitions (name/description/target count) — sent once
+    // here rather than on every progress update, since they never change per
+    // player. player.quests (part of `self` above) carries this player's
+    // actual per-quest progress against them.
+    questDefs: QUEST_DEFS,
   });
 
   // Tell everyone else a new player arrived.
@@ -651,6 +711,14 @@ io.on("connection", (socket) => {
       io.emit("mobDied", { id: mob.id, name: mob.name, killedBy: p.name });
       setTimeout(() => respawnMob(mob), MOB_RESPAWN_MS);
       awardXp(p, MOB_XP_REWARD);
+
+      // A "kill" quest (see server/quests.js) tracking this mob's name
+      // advances by one defeat.
+      const affectedQuests = advanceKillQuests(p.quests, mob.name);
+      for (const questId of affectedQuests) {
+        emitQuestProgress(p, questId);
+        if (p.quests[questId].completed) grantQuestReward(p, questId);
+      }
       return;
     }
 

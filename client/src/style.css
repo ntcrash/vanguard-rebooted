@@ -296,6 +296,69 @@ html, body {
   text-shadow: 0 0 3px #000;
 }
 
+#quest-panel {
+  position: absolute;
+  top: 50%;
+  left: 20px;
+  transform: translateY(-50%);
+  width: 240px;
+  padding: 14px;
+  background: rgba(14, 20, 26, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color: #e8f0f5;
+}
+
+#quest-panel.hidden {
+  display: none;
+}
+
+#quest-header {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+  margin-bottom: 10px;
+}
+
+#quest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quest-entry {
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+}
+
+.quest-entry.completed {
+  border-color: #7ee0ff;
+  opacity: 0.7;
+}
+
+.quest-name {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.quest-desc {
+  font-size: 11px;
+  opacity: 0.75;
+  margin-bottom: 4px;
+}
+
+.quest-progress {
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffd76b;
+}
+
 #touch-controls {
   display: none;
   position: absolute;

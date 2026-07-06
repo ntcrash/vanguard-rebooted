@@ -67,6 +67,11 @@ a full game.
   burn visibly brighter at night. Rain occasionally rolls in (a following
   particle-based shower centered on your position) for a stretch of every
   10-minute weather cycle
+- Simple quest system: three quests — Boar Cull, Wolf Hunter, and Moonpetal
+  Gathering — tracked server-side and shown in a toggleable quest log (`L`);
+  defeating the right mobs or collecting the right item advances progress
+  automatically, and completing a quest grants XP and item rewards and
+  announces it in chat
 
 Accounts are stored alongside player saves in `server/data/accounts.json`
 (gitignored, password hashes only — never plaintext).
@@ -129,13 +134,14 @@ Deploying this somewhere other players can reach it? See
 | Scroll wheel            | Zoom camera in/out               |
 | Click (no drag) / `F` / `Space` | Melee attack (cooldown applies) |
 | `I`                     | Toggle inventory panel           |
+| `L`                     | Toggle quest log                 |
 | `Enter`                 | Focus chat box / send message    |
 | `Esc`                   | Clear & unfocus chat box          |
 
 On a touchscreen, a virtual joystick (bottom-left) replaces WASD, and a
-Sprint/Attack/Inventory button stack (bottom-right) replaces `Shift`/click-
-or-`F`/`I`. Dragging a finger anywhere else on the scene orbits the camera,
-same as a mouse drag.
+Sprint/Attack/Inventory/Quest Log button stack (bottom-right) replaces
+`Shift`/click-or-`F`/`I`/`L`. Dragging a finger anywhere else on the scene
+orbits the camera, same as a mouse drag.
 
 ## Development notes
 

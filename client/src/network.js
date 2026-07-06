@@ -43,6 +43,12 @@ export function connectToServer(handlers, character) {
   socket.on("playerEquipmentChanged", (data) => handlers.onPlayerEquipmentChanged?.(data));
   socket.on("playerXpGained", (data) => handlers.onPlayerXpGained?.(data));
   socket.on("playerLeveledUp", (data) => handlers.onPlayerLeveledUp?.(data));
+  // Simple quest system (server/quests.js): "questProgress" is sent only to
+  // this player whenever one of their quests advances (or completes);
+  // "questCompleted" is broadcast to everyone so it can post a chat line the
+  // same way a level-up is announced.
+  socket.on("questProgress", (data) => handlers.onQuestProgress?.(data));
+  socket.on("questCompleted", (data) => handlers.onQuestCompleted?.(data));
   // Server-side anti-cheat (see server/index.js's MAX_MOVE_SPEED) rejected a
   // "move" this client sent as covering too much ground too fast -- either a
   // real speed/teleport hack, or (much more commonly) a bad lag spike. Either

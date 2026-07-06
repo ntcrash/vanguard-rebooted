@@ -7,6 +7,44 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Simple quest system: three server-authoritative quests — "Boar Cull"
+  (defeat 5 boars in the Meadow), "Wolf Hunter" (defeat 3 wolves in the
+  Whispering Forest), and "Moonpetal Gathering" (collect 3 Moonpetals) —
+  defined alongside pure progress-tracking helpers in a new
+  `server/quests.js` module (mirroring the existing `accountStore.js`/
+  `playerStore.js` pattern of keeping side-effect-free logic in its own
+  file). Kill quests advance on `mobDied` (matched by the defeated mob's
+  name), collect quests advance in `checkPickupCollection()` (matched by
+  item id, incremented by the pickup's stack `qty`, so a single big stack
+  can finish a quest in one pickup) — both hook into the existing mob-kill
+  and item-pickup code paths rather than adding new ones. Completing a
+  quest auto-grants its XP + item rewards through the same `awardXp()`/
+  `addItemToInventory()` calls a mob kill or pickup already uses, and
+  broadcasts a `questCompleted` chat line to everyone, the same way a
+  level-up is announced. Progress (and completion) persists across
+  sessions in `server/data/players.json` alongside inventory/equipment/XP,
+  and `initQuestState()` overlays a returning player's saved progress onto
+  a fresh state built from the current quest list, so a quest added after
+  a player's last save shows up automatically at 0 progress instead of
+  being missing or crashing on load. Client-side, a new quest log panel
+  (`L` to toggle, or the new 📜 button on touchscreens) lists each quest's
+  name, description, and live `x/y` progress, checking off completed ones —
+  driven entirely by two new socket events, a one-time `questDefs` payload
+  on `init` (static name/description/target count) and a personal
+  `questProgress` event whenever this player's own progress changes.
+  Verified the pure progress-tracking module (`initQuestState`,
+  `advanceKillQuests`, `advanceCollectQuests`) with a standalone Node
+  script — 17 checks covering fresh state, overlaying/clamping/dropping/
+  adding quest ids in saved data, per-mob-name and per-item-id target
+  matching (including a quest's alternate target names), completing
+  exactly at a quest's count, never exceeding it, skipping an
+  already-completed quest, and kill/collect advances not cross-
+  contaminating each other's quests — all passed; also spot-checked HTML
+  tag balance and CSS brace balance after the markup/stylesheet edits,
+  same as the mobile-touch-controls run, since there's no real browser to
+  load the page in here. This was the last item in the "Later / stretch
+  ideas" section of `ROADMAP.md`, alongside Voice chat and Guilds/parties
+  (both of which remain).
 - Day/night cycle and weather: `client/src/world.js` gained a client-side,
   clock-driven day/night loop (`DAY_CYCLE_SECONDS` = 300s = one full loop) that
   smoothly cross-fades the sky dome's gradient colors, the sun

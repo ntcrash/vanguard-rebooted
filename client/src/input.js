@@ -18,6 +18,10 @@ export const attack = { requested: false };
 // and cleared by main.js once it's been consumed for a frame.
 export const inventoryToggle = { requested: false };
 
+// Edge-triggered quest-log-panel toggle: set true on the quest log keybind,
+// and cleared by main.js once it's been consumed for a frame.
+export const questLogToggle = { requested: false };
+
 // On-screen movement joystick tuning, in px of finger travel from the base's
 // center. Exported as pure helpers (no DOM) so the direction/clamping math
 // can be unit tested without a browser.
@@ -81,6 +85,10 @@ export function initInput(canvas) {
     if (e.code === "KeyI") {
       e.preventDefault();
       inventoryToggle.requested = true;
+    }
+    if (e.code === "KeyL") {
+      e.preventDefault();
+      questLogToggle.requested = true;
     }
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
       keys.sprint = true;
@@ -151,6 +159,7 @@ function setupTouchControls(canvas) {
   const sprintBtn = document.getElementById("touch-sprint-btn");
   const attackBtn = document.getElementById("touch-attack-btn");
   const inventoryBtn = document.getElementById("touch-inventory-btn");
+  const questBtn = document.getElementById("touch-quest-btn");
 
   let joystickTouchId = null;
   let joystickCenterX = 0;
@@ -234,6 +243,17 @@ function setupTouchControls(canvas) {
       (e) => {
         e.preventDefault();
         inventoryToggle.requested = true;
+      },
+      { passive: false }
+    );
+  }
+
+  if (questBtn) {
+    questBtn.addEventListener(
+      "touchstart",
+      (e) => {
+        e.preventDefault();
+        questLogToggle.requested = true;
       },
       { passive: false }
     );
