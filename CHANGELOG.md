@@ -7,6 +7,40 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Day/night cycle and weather: `client/src/world.js` gained a client-side,
+  clock-driven day/night loop (`DAY_CYCLE_SECONDS` = 300s = one full loop) that
+  smoothly cross-fades the sky dome's gradient colors, the sun
+  `DirectionalLight`'s color/intensity, the `HemisphereLight`'s intensity, and
+  the scene fog color between five keyframes — midnight, dawn, noon, dusk,
+  midnight again (`dayNightPhase()`/`dayNightState()`, pure functions of
+  elapsed time so the interpolation math is unit-testable without a GL
+  context, same pattern as the existing `skyGradientMixFactor`/
+  `torchFlicker`). The noon keyframe exactly matches the sky/lighting's old
+  static values, so full daylight looks identical to before this change.
+  Forest gateway torches (`torchFlicker()`) now burn measurably brighter at
+  night via a `nightFactor` the day/night state also returns, and a new HUD
+  label (`#time-label` in `client/index.html`, driven by `dayPeriodLabel()`)
+  shows "Dawn"/"Day"/"Dusk"/"Night" and updates live as the cycle progresses.
+  A separate, independent weather cycle (`WEATHER_CYCLE_SECONDS` = 600s,
+  raining for the first `RAIN_DURATION_SECONDS` = 90s of each) drives a
+  `THREE.Points` rain cloud (`buildRain()`) that recenters on the local
+  player every frame and whose individual drops fall and wrap via a pure
+  `advanceRainDrop()` helper — both `isRaining()` and `advanceRainDrop()` are
+  plain functions of elapsed time/position, not `Math.random()` per frame, so
+  they're deterministic and unit-testable. Verified with a standalone Node
+  script (using the `three` package in `client/node_modules`) covering
+  `dayNightPhase` (wraparound, negative-elapsed handling), `dayNightState`
+  (noon matches the old static values exactly, midnight is darkest, symmetric
+  dawn/dusk keyframes interpolate correctly, phase clamps outside [0,1]),
+  `dayPeriodLabel`, `isRaining` (on/off boundaries, cycle wraparound), and
+  `advanceRainDrop` (fall distance, wrap-at-zero boundary); also built a real
+  `THREE.Scene` via `buildWorld()` and exercised `updateDayNight()`/
+  `updateRain()` against real `Light`/`ShaderMaterial`/`BufferGeometry`
+  objects to confirm sun/hemi intensity, fog color, sky shader uniforms, rain
+  visibility, and rain-follows-player positioning all update as expected, and
+  that the sky mesh, rain particle cloud, and both torch lights land in the
+  scene graph. This was one item from the "Later / stretch ideas" section of
+  `ROADMAP.md` (Voice chat, Guilds/parties, and Simple quest system remain).
 - Enhanced world/rendering graphics: a gradient sky dome (`buildSky()` in
   `client/src/world.js`, a large `BackSide` sphere with a vertical-gradient
   `ShaderMaterial`) replaces the previous flat `scene.background` color, so

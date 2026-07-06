@@ -11,7 +11,7 @@ export function buildWorld(scene) {
   // meets the fogged-out ground.
   scene.fog = new THREE.Fog(0xdff6ff, 60, 220);
 
-  buildSky(scene);
+  const sky = buildSky(scene);
 
   const hemi = new THREE.HemisphereLight(0xffffff, 0x3a5c3a, 1.1);
   scene.add(hemi);
@@ -26,6 +26,8 @@ export function buildWorld(scene) {
   sun.shadow.camera.bottom = -100;
   sun.shadow.camera.far = 300;
   scene.add(sun);
+
+  const rain = buildRain(scene);
 
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(400, 400, 64, 64),
@@ -45,7 +47,7 @@ export function buildWorld(scene) {
   scatterGrass(scene);
   const torches = buildForestGateway(scene);
 
-  return { ground, torches };
+  return { ground, torches, sky, sun, hemi, rain };
 }
 
 // A large inward-facing sphere with a vertical gradient shader standing in
@@ -107,6 +109,194 @@ export function skyGradientMixFactor(x, y, z, offset, exponent) {
   const len = Math.hypot(x, oy, z);
   const h = len === 0 ? 0 : oy / len;
   return Math.max(Math.pow(Math.max(h, 0), exponent), 0);
+}
+
+// ---- Day/night cycle --------------------------------------------------------------
+//
+// A full day/night loop is driven purely by clock.elapsedTime (see
+// updateDayNight() below, called every frame from main.js's animate()) — no
+// server time sync needed since it's a cosmetic client-side cycle, same
+// philosophy as the meadow/forest prop placement being deterministic rather
+// than server-authoritative. Five keyframes (midnight/dawn/noon/dusk/midnight)
+// are linearly interpolated between; the math is split into pure functions
+// (dayNightPhase, dayNightState) that take/return plain numbers so they're
+// unit-testable without a GL context or even `three` loaded, mirroring the
+// skyGradientMixFactor/torchFlicker pattern above.
+
+export const DAY_CYCLE_SECONDS = 300; // one full day/night loop = 5 real-time minutes
+
+// t: position in the loop (0 = midnight, 1 = midnight again). Colors are
+// 0xRRGGBB hex ints for readability; sunIntensity/hemiIntensity mirror the
+// original static values buildWorld() used at noon (1.4 / 1.1) so noon looks
+// identical to the pre-day/night-cycle scene. nightFactor is a convenience
+// 0..1 value (0 = full day, 1 = full night) other systems (e.g. torches) can
+// use without re-deriving it from hemiIntensity.
+const DAY_NIGHT_KEYFRAMES = [
+  { t: 0.0, top: 0x03050f, bottom: 0x0a1020, sun: 0x1a2740, sunIntensity: 0.05, hemiIntensity: 0.18, nightFactor: 1.0 },
+  { t: 0.25, top: 0x6a86c9, bottom: 0xffb37a, sun: 0xffb37a, sunIntensity: 0.75, hemiIntensity: 0.55, nightFactor: 0.35 },
+  { t: 0.5, top: 0x3f8cd8, bottom: 0xdff6ff, sun: 0xfff2d6, sunIntensity: 1.4, hemiIntensity: 1.1, nightFactor: 0.0 },
+  { t: 0.75, top: 0x6a4a86, bottom: 0xff8a5c, sun: 0xff8a5c, sunIntensity: 0.75, hemiIntensity: 0.55, nightFactor: 0.35 },
+  { t: 1.0, top: 0x03050f, bottom: 0x0a1020, sun: 0x1a2740, sunIntensity: 0.05, hemiIntensity: 0.18, nightFactor: 1.0 },
+];
+
+function hexToRgb01(hex) {
+  return [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255];
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function lerpRgb01(a, b, t) {
+  return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+}
+
+// Maps elapsed seconds onto [0, 1) representing where in the day/night loop
+// we currently are. Pure modulo — always returns a non-negative value even
+// if `elapsed` were ever negative, since JS's `%` can return negatives.
+export function dayNightPhase(elapsed, cycleSeconds = DAY_CYCLE_SECONDS) {
+  const m = elapsed % cycleSeconds;
+  return (m < 0 ? m + cycleSeconds : m) / cycleSeconds;
+}
+
+// Interpolates DAY_NIGHT_KEYFRAMES at a given phase (0..1), returning plain
+// arrays/numbers ([r,g,b] in 0..1, plus the two light intensities and
+// nightFactor) rather than THREE.Color objects, so this stays testable
+// without `three` loaded. applyDayNightState() below is the thin THREE-aware
+// wrapper that actually pushes these into scene objects.
+export function dayNightState(phase) {
+  const p = Math.min(Math.max(phase, 0), 1);
+  let i = 0;
+  while (i < DAY_NIGHT_KEYFRAMES.length - 2 && DAY_NIGHT_KEYFRAMES[i + 1].t <= p) i++;
+  const a = DAY_NIGHT_KEYFRAMES[i];
+  const b = DAY_NIGHT_KEYFRAMES[i + 1];
+  const span = b.t - a.t;
+  const localT = span === 0 ? 0 : (p - a.t) / span;
+
+  return {
+    topColor: lerpRgb01(hexToRgb01(a.top), hexToRgb01(b.top), localT),
+    bottomColor: lerpRgb01(hexToRgb01(a.bottom), hexToRgb01(b.bottom), localT),
+    sunColor: lerpRgb01(hexToRgb01(a.sun), hexToRgb01(b.sun), localT),
+    sunIntensity: lerp(a.sunIntensity, b.sunIntensity, localT),
+    hemiIntensity: lerp(a.hemiIntensity, b.hemiIntensity, localT),
+    nightFactor: lerp(a.nightFactor, b.nightFactor, localT),
+  };
+}
+
+// Plain-English label for the HUD time-of-day indicator, derived from the
+// same phase value dayNightState() uses — kept as its own pure function
+// (rather than inlined string logic in main.js) so the phase->label bucketing
+// is unit-testable on its own.
+export function dayPeriodLabel(phase) {
+  const p = Math.min(Math.max(phase, 0), 1);
+  if (p < 0.15 || p >= 0.85) return "Night";
+  if (p < 0.35) return "Dawn";
+  if (p < 0.65) return "Day";
+  return "Dusk";
+}
+
+// THREE-aware wrapper, called every frame from main.js. Pushes a
+// dayNightState() result into the sky dome's shader uniforms, the sun/hemi
+// lights, and the scene fog (kept matched to the horizon/bottom color, same
+// convention buildSky()'s doc comment already established for the static
+// case). Returns the state in case a caller (main.js, for torch brightness)
+// wants nightFactor without recomputing it.
+export function updateDayNight(scene, sky, sun, hemi, elapsedSeconds, cycleSeconds = DAY_CYCLE_SECONDS) {
+  const state = dayNightState(dayNightPhase(elapsedSeconds, cycleSeconds));
+
+  sky.material.uniforms.topColor.value.setRGB(...state.topColor);
+  sky.material.uniforms.bottomColor.value.setRGB(...state.bottomColor);
+
+  sun.color.setRGB(...state.sunColor);
+  sun.intensity = state.sunIntensity;
+  hemi.intensity = state.hemiIntensity;
+
+  if (scene.fog) scene.fog.color.setRGB(...state.bottomColor);
+
+  return state;
+}
+
+// ---- Weather (rain) ---------------------------------------------------------------
+//
+// A simple deterministic rain cycle, same "pure function of elapsed time"
+// approach as the day/night cycle and torchFlicker: isRaining()/
+// advanceRainDrop() take/return plain numbers so the on/off timing and fall
+// motion are unit-testable without a GL context.
+
+export const WEATHER_CYCLE_SECONDS = 600; // repeats every 10 real-time minutes
+export const RAIN_DURATION_SECONDS = 90; // rains for the first 90s of each cycle
+
+const RAIN_COUNT = 700;
+const RAIN_AREA = 55; // half-width (x/z) of the box of raindrops around the follow target
+const RAIN_HEIGHT = 40; // drops fall from y=RAIN_HEIGHT down to y=0, then wrap back to the top
+const RAIN_FALL_SPEED = 24; // units/sec
+
+// True if it should be raining at `elapsed` seconds — rains for the first
+// RAIN_DURATION_SECONDS of every WEATHER_CYCLE_SECONDS-long cycle, clear the
+// rest of the time. Same non-negative-modulo handling as dayNightPhase().
+export function isRaining(elapsed, cycleSeconds = WEATHER_CYCLE_SECONDS, rainDuration = RAIN_DURATION_SECONDS) {
+  const m = elapsed % cycleSeconds;
+  return (m < 0 ? m + cycleSeconds : m) < rainDuration;
+}
+
+// Moves one raindrop's y position down by fallSpeed*dt, wrapping back up to
+// `height` once it passes 0 — an endless falling-rain loop with no per-frame
+// randomness needed (the initial scatter in buildRain() is randomized once at
+// setup so drops don't all wrap in lockstep).
+export function advanceRainDrop(y, dt, fallSpeed = RAIN_FALL_SPEED, height = RAIN_HEIGHT) {
+  const next = y - fallSpeed * dt;
+  return next < 0 ? next + height : next;
+}
+
+// Builds the rain particle system (a THREE.Points cloud) and adds it to the
+// scene, hidden by default — main.js's animate() loop toggles `.visible` via
+// isRaining() and repositions it to follow the local player (see updateRain()
+// below) so the drop volume always surrounds wherever the player currently is
+// rather than covering the whole (much larger) world at once.
+function buildRain(scene) {
+  const positions = new Float32Array(RAIN_COUNT * 3);
+  for (let i = 0; i < RAIN_COUNT; i++) {
+    positions[i * 3] = (Math.random() * 2 - 1) * RAIN_AREA;
+    positions[i * 3 + 1] = Math.random() * RAIN_HEIGHT;
+    positions[i * 3 + 2] = (Math.random() * 2 - 1) * RAIN_AREA;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+
+  const material = new THREE.PointsMaterial({
+    color: 0xaac9ff,
+    size: 0.14,
+    transparent: true,
+    opacity: 0.65,
+    depthWrite: false,
+    fog: false,
+  });
+
+  const rain = new THREE.Points(geometry, material);
+  rain.visible = false;
+  rain.frustumCulled = false; // it follows the camera/player every frame, so bounding-box culling would just cause flicker
+  scene.add(rain);
+  return rain;
+}
+
+// Called every frame from main.js. Toggles visibility via isRaining(), and
+// while visible, advances every drop's y via advanceRainDrop() and
+// recenters the whole cloud on `followX`/`followZ` (typically the local
+// player's position) so rain is always falling around wherever the player
+// currently stands.
+export function updateRain(rain, dt, elapsedSeconds, followX = 0, followZ = 0) {
+  const raining = isRaining(elapsedSeconds);
+  rain.visible = raining;
+  rain.position.x = followX;
+  rain.position.z = followZ;
+  if (!raining) return;
+
+  const positions = rain.geometry.attributes.position;
+  for (let i = 0; i < positions.count; i++) {
+    const y = positions.getY(i);
+    positions.setY(i, advanceRainDrop(y, dt));
+  }
+  positions.needsUpdate = true;
 }
 
 function scatterProps(scene) {
