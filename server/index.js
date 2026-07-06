@@ -43,6 +43,8 @@ io.on("connection", (socket) => {
     y: 0,
     z: (Math.random() - 0.5) * 20,
     rotY: 0,
+    hp: 100,
+    maxHp: 100,
     lastAttackAt: 0,
   };
   players.set(socket.id, player);

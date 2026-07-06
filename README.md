@@ -16,6 +16,7 @@ a full game.
 - WASD (or arrow key) movement, camera-relative
 - Global text chat
 - Name tags floating above each character
+- Health bars floating above each character (server-tracked HP, currently always full — damage isn't wired up yet)
 - Basic melee attack (click or `F`/`Space`) with a cooldown, synced to other players
 
 Not included yet — see [ROADMAP.md](./ROADMAP.md).
