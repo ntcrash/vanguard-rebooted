@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { buildWorld } from "./world.js";
 import { createCharacterMesh, RemotePlayer, triggerAttack, updateAttack } from "./player.js";
 import { Mob } from "./mob.js";
+import { Pickup } from "./pickup.js";
 import { initInput, keys, mouse, attack as attackInput, inventoryToggle } from "./input.js";
 import { connectToServer } from "./network.js";
 import { initChat } from "./chat.js";
@@ -59,6 +60,7 @@ const local = {
 
 const remotePlayers = new Map(); // id -> RemotePlayer
 const mobs = new Map(); // id -> Mob
+const pickups = new Map(); // id -> Pickup (world item pickups)
 const labelEls = new Map(); // id -> HTMLDivElement (name tag), shared by players + mobs
 const healthBarEls = new Map(); // id -> { outer, fill } HTMLDivElements, shared by players + mobs
 const damageNumbers = new DamageNumbers(labelsEl);
@@ -165,6 +167,10 @@ function startGame(character) {
 
       for (const m of data.mobs || []) {
         if (m.alive) spawnMob(m);
+      }
+
+      for (const pk of data.pickups || []) {
+        spawnPickup(pk);
       }
     },
 
@@ -302,6 +308,26 @@ function startGame(character) {
         }
       }
     },
+
+    onItemPickedUp: (data) => {
+      // The server already removed this pickup for everyone; only the
+      // looting player's inventory changes (via the separate
+      // "inventoryUpdated" event below), so this just handles the world
+      // visual + a chat line.
+      despawnPickup(data.id);
+      const who = data.playerId === local.id ? "You" : data.playerName;
+      const qtyPrefix = data.qty > 1 ? `${data.qty}x ` : "";
+      chat.addSystemLine(`${who} picked up ${qtyPrefix}${data.name}.`);
+    },
+
+    onPickupRespawned: (data) => {
+      spawnPickup(data);
+    },
+
+    onInventoryUpdated: (data) => {
+      local.inventory = data.inventory || [];
+      renderInventory();
+    },
   }, character);
 }
 
@@ -338,6 +364,19 @@ function despawnMob(id) {
   if (bar) {
     bar.outer.remove();
     healthBarEls.delete(id);
+  }
+}
+
+// Pickups have no name tag / health bar — just a mesh in the world.
+function spawnPickup(pk) {
+  pickups.set(pk.id, new Pickup(scene, pk));
+}
+
+function despawnPickup(id) {
+  const pickup = pickups.get(id);
+  if (pickup) {
+    pickup.dispose(scene);
+    pickups.delete(id);
   }
 }
 
@@ -524,6 +563,7 @@ function animate() {
 
   for (const rp of remotePlayers.values()) rp.update(dt);
   for (const mob of mobs.values()) mob.update(dt);
+  for (const pickup of pickups.values()) pickup.update(dt);
 
   maybeSendMove(performance.now());
   updateLabels();

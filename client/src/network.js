@@ -33,6 +33,9 @@ export function connectToServer(handlers, character) {
   socket.on("playerDamaged", (data) => handlers.onPlayerDamaged?.(data));
   socket.on("playerDied", (data) => handlers.onPlayerDied?.(data));
   socket.on("playerRespawned", (data) => handlers.onPlayerRespawned?.(data));
+  socket.on("itemPickedUp", (data) => handlers.onItemPickedUp?.(data));
+  socket.on("pickupRespawned", (data) => handlers.onPickupRespawned?.(data));
+  socket.on("inventoryUpdated", (data) => handlers.onInventoryUpdated?.(data));
 
   return {
     sendMove(x, y, z, rotY) {

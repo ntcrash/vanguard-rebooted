@@ -7,6 +7,17 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Item pickups in the world: 8 glowing gem pickups (health draughts and a new
+  Gold Coin currency item) are scattered around the map at fixed points
+  (`PICKUP_SPAWNS` in `server/index.js`). Walking within range automatically
+  loots one into your inventory (`checkPickupCollection()`, checked after
+  every server-validated move) — no separate interact key needed. Looted
+  pickups respawn after 20 seconds (`respawnPickup()`, mirroring the existing
+  mob respawn pattern). Client-side, pickups render as small rotating/bobbing
+  gems color-coded by item type (`client/src/pickup.js`); a new
+  `inventoryUpdated` event pushes the looting player's updated inventory to
+  their own client, and a broadcast `itemPickedUp`/`pickupRespawned` pair
+  keeps everyone's view of the world in sync and posts a "picked up" chat line.
 - Player inventory: each player now has a server-authoritative inventory
   (`inventory` array on the player object in `server/index.js`, capped at
   `MAX_INVENTORY_SLOTS` = 20, with items stacking by id via
