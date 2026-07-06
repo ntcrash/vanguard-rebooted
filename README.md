@@ -21,6 +21,9 @@ a full game.
 - Basic melee attack (click or `F`/`Space`) with a cooldown, synced to other players
 - Player inventory: a server-tracked item inventory with a toggleable panel
   (`I`); new players start with a small kit of items
+- Equippable gear: gear items (a sword, helm, and armor) can be equipped or
+  unequipped by clicking them in the inventory panel, visibly changing your
+  character model for everyone in real time
 - Item pickups: glowing gems scattered around the world (health draughts,
   gold coins) that are automatically looted into your inventory when you
   walk over them, and respawn after a short delay

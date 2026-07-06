@@ -5,7 +5,6 @@ reprioritized based on what's more fun to build/play.
 
 ## v0.3 — Progression & items
 
-- [ ] Equippable gear that visibly changes the character model
 - [ ] Basic XP/leveling tied to defeating mobs
 
 ## v0.4 — World & persistence

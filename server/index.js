@@ -19,7 +19,15 @@ const ITEM_DEFS = {
   "rusty-sword": { name: "Rusty Sword", icon: "⚔️" },
   "health-draught": { name: "Health Draught", icon: "🧪" },
   "gold-coin": { name: "Gold Coin", icon: "🪙" },
+  // Equippable gear — each has a `slot` ("weapon" | "head" | "body") so
+  // equipItem()/unequipItem() below know where it goes on the player's
+  // equipment loadout. Non-gear items above have no `slot` and can't be
+  // equipped.
+  "steel-sword": { name: "Steel Sword", icon: "🗡️", slot: "weapon" },
+  "iron-helm": { name: "Iron Helm", icon: "⛑️", slot: "head" },
+  "leather-armor": { name: "Leather Armor", icon: "🥋", slot: "body" },
 };
+const EQUIPMENT_SLOTS = ["weapon", "head", "body"];
 
 /** Adds `qty` of `itemId` to a player's inventory, stacking onto an existing
  * slot if one exists. Returns false (adding nothing) if the item id is
@@ -36,7 +44,7 @@ function addItemToInventory(player, itemId, qty = 1) {
 
   if (player.inventory.length >= MAX_INVENTORY_SLOTS) return false;
 
-  player.inventory.push({ itemId, name: def.name, icon: def.icon, qty });
+  player.inventory.push({ itemId, name: def.name, icon: def.icon, qty, slot: def.slot ?? null });
   return true;
 }
 
@@ -57,6 +65,9 @@ const PICKUP_SPAWNS = [
   { x: 20, z: -60, itemId: "gold-coin", qty: 4 },
   { x: -20, z: 60, itemId: "health-draught", qty: 1 },
   { x: 0, z: -80, itemId: "gold-coin", qty: 6 },
+  { x: 80, z: 0, itemId: "iron-helm", qty: 1 },
+  { x: -80, z: 0, itemId: "leather-armor", qty: 1 },
+  { x: 0, z: 80, itemId: "steel-sword", qty: 1 },
 ];
 
 /** @type {Map<string, object>} */
@@ -321,6 +332,9 @@ io.on("connection", (socket) => {
     alive: true,
     lastAttackAt: 0,
     inventory: [],
+    // Equippable gear currently worn, one item id (or null) per slot. Drives
+    // the visible character model on every client via "playerEquipmentChanged".
+    equipment: { weapon: null, head: null, body: null },
   };
   // Starter kit so the inventory panel has something to show before item
   // pickups (a later roadmap item) exist in the world.
@@ -399,6 +413,32 @@ io.on("connection", (socket) => {
         io.emit("playerDamaged", { id: p.id, hp: p.hp });
       }
     }
+  });
+
+  // ---- Equippable gear ---------------------------------------------------
+  // Equip/unequip only ever move an item id already sitting in the player's
+  // own inventory into/out of their equipment loadout — nothing is created,
+  // consumed, or removed from inventory by (un)equipping. Broadcast to
+  // everyone (not just the equipping player) so remote clients can re-skin
+  // that player's character mesh (see applyEquipment() in client/src/player.js).
+  socket.on("equipItem", (itemId) => {
+    const p = players.get(socket.id);
+    if (!p || !p.alive || typeof itemId !== "string") return;
+
+    const owned = p.inventory.some((slot) => slot.itemId === itemId);
+    const def = ITEM_DEFS[itemId];
+    if (!owned || !def || !def.slot) return; // must own it and it must be gear
+
+    p.equipment[def.slot] = itemId;
+    io.emit("playerEquipmentChanged", { id: p.id, equipment: p.equipment });
+  });
+
+  socket.on("unequipItem", (slot) => {
+    const p = players.get(socket.id);
+    if (!p || !p.alive || !EQUIPMENT_SLOTS.includes(slot)) return;
+
+    p.equipment[slot] = null;
+    io.emit("playerEquipmentChanged", { id: p.id, equipment: p.equipment });
   });
 
   socket.on("chat", (message) => {

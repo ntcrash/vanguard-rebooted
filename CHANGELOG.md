@@ -7,6 +7,21 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Equippable gear that visibly changes the character model: items can now
+  have an equipment `slot` ("weapon", "head", or "body" — see `ITEM_DEFS` in
+  `server/index.js`), starting with a Steel Sword, Iron Helm, and Leather
+  Armor, each added as a new world pickup. Clicking a gear tile in the
+  inventory panel equips it (or unequips it if already worn) via new
+  `equipItem`/`unequipItem` socket events; the server validates the player
+  owns the item and tracks a per-player `equipment` loadout
+  (`{ weapon, head, body }`), broadcasting changes to everyone as
+  `playerEquipmentChanged` so the character model updates live for all
+  connected clients, not just the equipping player. Client-side,
+  `applyEquipment()` (`client/src/player.js`) rebuilds only the affected gear
+  mesh — a re-skinned blade for weapons, a metallic dome for the head slot, a
+  cylinder-plus-shoulder-pads overlay for the body slot — so re-equipping
+  doesn't require rebuilding the whole character mesh. Equipped tiles are
+  highlighted in the inventory panel.
 - Item pickups in the world: 8 glowing gem pickups (health draughts and a new
   Gold Coin currency item) are scattered around the map at fixed points
   (`PICKUP_SPAWNS` in `server/index.js`). Walking within range automatically
