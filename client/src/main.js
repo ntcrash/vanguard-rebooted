@@ -6,6 +6,7 @@ import { initInput, keys, mouse, attack as attackInput } from "./input.js";
 import { connectToServer } from "./network.js";
 import { initChat } from "./chat.js";
 import { DamageNumbers } from "./damageNumbers.js";
+import { initCharacterCreate } from "./characterCreate.js";
 
 const canvas = document.getElementById("scene");
 const statusEl = document.getElementById("status");
@@ -94,180 +95,184 @@ const chat = initChat((text) => {
 
 let net; // assigned below, referenced by chat callback above via closure
 
-net = connectToServer({
-  onConnect: () => {
-    statusEl.textContent = "Connected";
-  },
-  onDisconnect: () => {
-    statusEl.textContent = "Disconnected — reconnecting…";
-  },
-  onConnectError: () => {
-    statusEl.textContent = "Cannot reach server (is it running on :3000?)";
-  },
+function startGame(character) {
+  net = connectToServer({
+    onConnect: () => {
+      statusEl.textContent = "Connected";
+    },
+    onDisconnect: () => {
+      statusEl.textContent = "Disconnected — reconnecting…";
+    },
+    onConnectError: () => {
+      statusEl.textContent = "Cannot reach server (is it running on :3000?)";
+    },
 
-  onInit: (data) => {
-    local.id = data.id;
-    local.name = data.self.name;
-    local.rotY = data.self.rotY;
-    local.hp = data.self.hp ?? 100;
-    local.maxHp = data.self.maxHp ?? 100;
-    local.alive = data.self.alive ?? true;
+    onInit: (data) => {
+      local.id = data.id;
+      local.name = data.self.name;
+      local.rotY = data.self.rotY;
+      local.hp = data.self.hp ?? 100;
+      local.maxHp = data.self.maxHp ?? 100;
+      local.alive = data.self.alive ?? true;
 
-    local.mesh = createCharacterMesh(data.self.color);
-    local.mesh.position.set(data.self.x, data.self.y, data.self.z);
-    scene.add(local.mesh);
-    labelEls.set(local.id, makeLabel(local.name, "self"));
-    healthBarEls.set(local.id, makeHealthBar());
-    setHealthBarHp(local.id, local.hp, local.maxHp);
-
-    statusEl.textContent = `Connected as ${local.name}`;
-    chat.addSystemLine(`You joined as ${local.name}.`);
-
-    for (const p of data.players) {
-      if (p.id === local.id) continue;
-      spawnRemote(p);
-    }
-
-    for (const m of data.mobs || []) {
-      if (m.alive) spawnMob(m);
-    }
-  },
-
-  onPlayerJoined: (p) => {
-    spawnRemote(p);
-    chat.addSystemLine(`${p.name} joined.`);
-  },
-
-  onPlayerMoved: (data) => {
-    const rp = remotePlayers.get(data.id);
-    if (rp) rp.setTarget(data.x, data.y, data.z, data.rotY);
-  },
-
-  onPlayerLeft: (data) => {
-    const rp = remotePlayers.get(data.id);
-    if (rp) {
-      rp.dispose(scene);
-      remotePlayers.delete(data.id);
-    }
-    const label = labelEls.get(data.id);
-    if (label) {
-      label.remove();
-      labelEls.delete(data.id);
-    }
-    const bar = healthBarEls.get(data.id);
-    if (bar) {
-      bar.outer.remove();
-      healthBarEls.delete(data.id);
-    }
-  },
-
-  onChat: (data) => {
-    chat.addLine(data.name, data.text, data.id === local.id);
-  },
-
-  onPlayerAttacked: (data) => {
-    const rp = remotePlayers.get(data.id);
-    if (rp) rp.triggerAttack();
-  },
-
-  onMobsState: (data) => {
-    for (const m of data) {
-      const mob = mobs.get(m.id);
-      if (mob) {
-        mob.setTarget(m.x, m.y, m.z, m.rotY);
-      } else if (m.alive) {
-        spawnMob(m);
-      }
-    }
-  },
-
-  onMobDamaged: (data) => {
-    const mob = mobs.get(data.id);
-    if (mob) {
-      const dmg = mob.hp - data.hp;
-      mob.applyDamage(data.hp);
-      setHealthBarHp(data.id, mob.hp, mob.maxHp);
-      damageNumbers.spawn(mob.headWorldPosition(_dmgPos), dmg);
-    }
-  },
-
-  onMobDied: (data) => {
-    const mob = mobs.get(data.id);
-    if (mob && mob.hp > 0) {
-      damageNumbers.spawn(mob.headWorldPosition(_dmgPos), mob.hp, { finishing: true });
-    }
-    despawnMob(data.id);
-    chat.addSystemLine(`${data.name} was defeated${data.killedBy ? ` by ${data.killedBy}` : ""}.`);
-  },
-
-  onMobRespawned: (data) => {
-    spawnMob(data);
-    chat.addSystemLine(`${data.name} has respawned.`);
-  },
-
-  onPlayerDamaged: (data) => {
-    if (data.id === local.id) {
-      const dmg = local.hp - data.hp;
-      local.hp = data.hp;
+      local.mesh = createCharacterMesh(data.self.color);
+      local.mesh.position.set(data.self.x, data.self.y, data.self.z);
+      scene.add(local.mesh);
+      labelEls.set(local.id, makeLabel(local.name, "self"));
+      healthBarEls.set(local.id, makeHealthBar());
       setHealthBarHp(local.id, local.hp, local.maxHp);
-      if (local.mesh) {
-        _dmgPos.copy(local.mesh.position);
-        _dmgPos.y += 2.3;
-        damageNumbers.spawn(_dmgPos, dmg);
-      }
-    } else {
-      const rp = remotePlayers.get(data.id);
-      if (rp) {
-        const dmg = rp.hp - data.hp;
-        rp.hp = data.hp;
-        setHealthBarHp(data.id, rp.hp, rp.maxHp);
-        damageNumbers.spawn(rp.headWorldPosition(_dmgPos), dmg);
-      }
-    }
-  },
 
-  onPlayerDied: (data) => {
-    if (data.id === local.id) {
-      local.alive = false;
-      if (local.mesh) local.mesh.visible = false;
-      statusEl.textContent = "You died — respawning…";
-      chat.addSystemLine(`You were defeated${data.killedBy ? ` by a ${data.killedBy}` : ""}.`);
-    } else {
-      const rp = remotePlayers.get(data.id);
-      if (rp) rp.mesh.visible = false;
-      chat.addSystemLine(`${data.name} was defeated${data.killedBy ? ` by a ${data.killedBy}` : ""}.`);
-    }
-  },
-
-  onPlayerRespawned: (data) => {
-    if (data.id === local.id) {
-      local.hp = data.hp;
-      local.maxHp = data.maxHp;
-      local.alive = true;
-      if (local.mesh) {
-        local.mesh.position.set(data.x, data.y, data.z);
-        local.mesh.rotation.y = data.rotY;
-        local.mesh.visible = true;
-      }
-      setHealthBarHp(local.id, local.hp, local.maxHp);
       statusEl.textContent = `Connected as ${local.name}`;
-      chat.addSystemLine("You respawned.");
-      // Force the next move tick to broadcast, so remote clients see the teleport.
-      lastSent = { x: null, y: null, z: null, rotY: null };
-    } else {
+      chat.addSystemLine(`You joined as ${local.name}.`);
+
+      for (const p of data.players) {
+        if (p.id === local.id) continue;
+        spawnRemote(p);
+      }
+
+      for (const m of data.mobs || []) {
+        if (m.alive) spawnMob(m);
+      }
+    },
+
+    onPlayerJoined: (p) => {
+      spawnRemote(p);
+      chat.addSystemLine(`${p.name} joined.`);
+    },
+
+    onPlayerMoved: (data) => {
+      const rp = remotePlayers.get(data.id);
+      if (rp) rp.setTarget(data.x, data.y, data.z, data.rotY);
+    },
+
+    onPlayerLeft: (data) => {
       const rp = remotePlayers.get(data.id);
       if (rp) {
-        rp.hp = data.hp;
-        rp.maxHp = data.maxHp;
-        rp.mesh.position.set(data.x, data.y, data.z);
-        rp.mesh.rotation.y = data.rotY;
-        rp.mesh.visible = true;
-        rp.setTarget(data.x, data.y, data.z, data.rotY);
-        setHealthBarHp(data.id, rp.hp, rp.maxHp);
+        rp.dispose(scene);
+        remotePlayers.delete(data.id);
       }
-    }
-  },
-});
+      const label = labelEls.get(data.id);
+      if (label) {
+        label.remove();
+        labelEls.delete(data.id);
+      }
+      const bar = healthBarEls.get(data.id);
+      if (bar) {
+        bar.outer.remove();
+        healthBarEls.delete(data.id);
+      }
+    },
+
+    onChat: (data) => {
+      chat.addLine(data.name, data.text, data.id === local.id);
+    },
+
+    onPlayerAttacked: (data) => {
+      const rp = remotePlayers.get(data.id);
+      if (rp) rp.triggerAttack();
+    },
+
+    onMobsState: (data) => {
+      for (const m of data) {
+        const mob = mobs.get(m.id);
+        if (mob) {
+          mob.setTarget(m.x, m.y, m.z, m.rotY);
+        } else if (m.alive) {
+          spawnMob(m);
+        }
+      }
+    },
+
+    onMobDamaged: (data) => {
+      const mob = mobs.get(data.id);
+      if (mob) {
+        const dmg = mob.hp - data.hp;
+        mob.applyDamage(data.hp);
+        setHealthBarHp(data.id, mob.hp, mob.maxHp);
+        damageNumbers.spawn(mob.headWorldPosition(_dmgPos), dmg);
+      }
+    },
+
+    onMobDied: (data) => {
+      const mob = mobs.get(data.id);
+      if (mob && mob.hp > 0) {
+        damageNumbers.spawn(mob.headWorldPosition(_dmgPos), mob.hp, { finishing: true });
+      }
+      despawnMob(data.id);
+      chat.addSystemLine(`${data.name} was defeated${data.killedBy ? ` by ${data.killedBy}` : ""}.`);
+    },
+
+    onMobRespawned: (data) => {
+      spawnMob(data);
+      chat.addSystemLine(`${data.name} has respawned.`);
+    },
+
+    onPlayerDamaged: (data) => {
+      if (data.id === local.id) {
+        const dmg = local.hp - data.hp;
+        local.hp = data.hp;
+        setHealthBarHp(local.id, local.hp, local.maxHp);
+        if (local.mesh) {
+          _dmgPos.copy(local.mesh.position);
+          _dmgPos.y += 2.3;
+          damageNumbers.spawn(_dmgPos, dmg);
+        }
+      } else {
+        const rp = remotePlayers.get(data.id);
+        if (rp) {
+          const dmg = rp.hp - data.hp;
+          rp.hp = data.hp;
+          setHealthBarHp(data.id, rp.hp, rp.maxHp);
+          damageNumbers.spawn(rp.headWorldPosition(_dmgPos), dmg);
+        }
+      }
+    },
+
+    onPlayerDied: (data) => {
+      if (data.id === local.id) {
+        local.alive = false;
+        if (local.mesh) local.mesh.visible = false;
+        statusEl.textContent = "You died — respawning…";
+        chat.addSystemLine(`You were defeated${data.killedBy ? ` by a ${data.killedBy}` : ""}.`);
+      } else {
+        const rp = remotePlayers.get(data.id);
+        if (rp) rp.mesh.visible = false;
+        chat.addSystemLine(`${data.name} was defeated${data.killedBy ? ` by a ${data.killedBy}` : ""}.`);
+      }
+    },
+
+    onPlayerRespawned: (data) => {
+      if (data.id === local.id) {
+        local.hp = data.hp;
+        local.maxHp = data.maxHp;
+        local.alive = true;
+        if (local.mesh) {
+          local.mesh.position.set(data.x, data.y, data.z);
+          local.mesh.rotation.y = data.rotY;
+          local.mesh.visible = true;
+        }
+        setHealthBarHp(local.id, local.hp, local.maxHp);
+        statusEl.textContent = `Connected as ${local.name}`;
+        chat.addSystemLine("You respawned.");
+        // Force the next move tick to broadcast, so remote clients see the teleport.
+        lastSent = { x: null, y: null, z: null, rotY: null };
+      } else {
+        const rp = remotePlayers.get(data.id);
+        if (rp) {
+          rp.hp = data.hp;
+          rp.maxHp = data.maxHp;
+          rp.mesh.position.set(data.x, data.y, data.z);
+          rp.mesh.rotation.y = data.rotY;
+          rp.mesh.visible = true;
+          rp.setTarget(data.x, data.y, data.z, data.rotY);
+          setHealthBarHp(data.id, rp.hp, rp.maxHp);
+        }
+      }
+    },
+  }, character);
+}
+
+initCharacterCreate(startGame);
 
 function spawnRemote(p) {
   const rp = new RemotePlayer(scene, p);

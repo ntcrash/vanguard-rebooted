@@ -10,6 +10,7 @@ a full game.
 
 ## Features
 
+- Character creation screen: pick a name and color before joining the world
 - 3D outdoor world (ground, trees, rocks, lighting/shadows, sky/fog)
 - Multiplayer: see other connected players move around in real time
 - Third-person camera you orbit with the mouse and zoom with the scroll wheel

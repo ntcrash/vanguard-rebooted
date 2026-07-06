@@ -12,7 +12,7 @@
       <div id="labels"></div>
 
       <div id="hud">
-        <div id="status">Connecting…</div>
+        <div id="status">Create your character to join</div>
         <div id="help">
           WASD move · drag mouse to rotate camera · scroll to zoom · click or F to attack mobs/players ·
           Enter to chat
@@ -25,6 +25,30 @@
       <div id="chat">
         <div id="chat-log"></div>
         <input id="chat-input" type="text" placeholder="Press Enter to chat…" maxlength="240" />
+      </div>
+
+      <div id="login-screen">
+        <div id="login-panel">
+          <h1>Vanguard Rebooted</h1>
+          <p class="subtitle">Create your character</p>
+
+          <label for="name-input">Name</label>
+          <input
+            id="name-input"
+            type="text"
+            maxlength="20"
+            placeholder="Enter a name…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+
+          <label>Color</label>
+          <div id="color-swatches"></div>
+
+          <p id="login-error"></p>
+
+          <button id="enter-world-btn" type="button">Enter World</button>
+        </div>
       </div>
     </div>
 

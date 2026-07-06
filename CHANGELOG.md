@@ -7,6 +7,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Character creation screen: before joining, players now pick a display name and a color from a palette on a pre-game overlay (`client/src/characterCreate.js`, wired into `client/index.html` as `#login-screen`). The choice is sent to the server as socket.io auth and replaces the old behavior of auto-assigning a random name/color on connect. The server validates and sanitizes both fields (`sanitizeChosenName`/`sanitizeChosenColor` in `server/index.js`) and falls back to a random guest name/color if the input is missing or invalid, so older or malformed clients still work.
 - Respawn handling for mobs and players:
   - Defeated mobs return to life at their home spawn point 15 seconds after
     dying (`respawnMob()` in `server/index.js`), broadcast as `mobRespawned`.

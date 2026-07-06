@@ -3,9 +3,6 @@
 A rough, non-binding order of what's planned next. Anything here can be
 reprioritized based on what's more fun to build/play.
 
-## v0.2 — Combat basics
-- [ ] Add login, character creation
-
 ## v0.3 — Progression & items
 
 - [ ] Player inventory (client-side UI + server-authoritative state)
