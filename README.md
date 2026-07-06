@@ -10,7 +10,11 @@ a full game.
 
 ## Features
 
-- Character creation screen: pick a name and color before joining the world
+- Basic account/login: choose a username, password, and color on the login
+  screen — the first login with a given name creates that account, every
+  login after that must use the same password (see `server/accountStore.js`);
+  a wrong password is rejected outright rather than silently handing you a
+  guest identity
 - 3D outdoor world (ground, trees, rocks, lighting/shadows, sky/fog) spanning two
   distinct zones — the starting Meadow and the Whispering Forest to the north,
   reached on foot past a pair of stone gateway pillars
@@ -40,10 +44,13 @@ a full game.
   respawns nearby a few seconds later with full health
 - Persistent player state: level, XP, HP, inventory, equipment, and position
   are saved server-side (`server/data/players.json`, gitignored) keyed by
-  your chosen character name, and restored automatically the next time you
-  join with that same name — progress survives reconnects and server
-  restarts. There's no account/login system yet (see ROADMAP), so name
-  doubles as the save-slot key for now.
+  your account name, and restored automatically the next time you log in —
+  progress survives reconnects and server restarts, and (now that accounts
+  are password-protected) can't be reached by someone else just typing in
+  your name.
+
+Accounts are stored alongside player saves in `server/data/accounts.json`
+(gitignored, password hashes only — never plaintext).
 
 Not included yet — see [ROADMAP.md](./ROADMAP.md).
 

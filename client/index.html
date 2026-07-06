@@ -12,7 +12,7 @@
       <div id="labels"></div>
 
       <div id="hud">
-        <div id="status">Create your character to join</div>
+        <div id="status">Log in to join</div>
         <div id="zone-label"></div>
         <div id="help">
           WASD move · drag mouse to rotate camera · scroll to zoom · click or F to attack mobs/players ·
@@ -41,7 +41,7 @@
       <div id="login-screen">
         <div id="login-panel">
           <h1>Vanguard Rebooted</h1>
-          <p class="subtitle">Create your character</p>
+          <p class="subtitle">Log in or create your account</p>
 
           <label for="name-input">Name</label>
           <input
@@ -52,6 +52,16 @@
             autocomplete="off"
             spellcheck="false"
           />
+
+          <label for="password-input">Password</label>
+          <input
+            id="password-input"
+            type="password"
+            maxlength="64"
+            placeholder="Enter a password…"
+            autocomplete="off"
+          />
+          <p class="hint">New name? That password creates your account. Returning? Use the same one.</p>
 
           <label>Color</label>
           <div id="color-swatches"></div>
