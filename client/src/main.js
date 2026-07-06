@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { buildWorld } from "./world.js";
 import { createCharacterMesh, RemotePlayer, triggerAttack, updateAttack } from "./player.js";
 import { Mob } from "./mob.js";
-import { initInput, keys, mouse, attack as attackInput } from "./input.js";
+import { initInput, keys, mouse, attack as attackInput, inventoryToggle } from "./input.js";
 import { connectToServer } from "./network.js";
 import { initChat } from "./chat.js";
 import { DamageNumbers } from "./damageNumbers.js";
@@ -12,6 +12,9 @@ const canvas = document.getElementById("scene");
 const statusEl = document.getElementById("status");
 const labelsEl = document.getElementById("labels");
 const cooldownFillEl = document.getElementById("attack-cooldown-fill");
+const inventoryPanelEl = document.getElementById("inventory-panel");
+const inventoryGridEl = document.getElementById("inventory-grid");
+const INVENTORY_SLOT_COUNT = 20; // must match server's MAX_INVENTORY_SLOTS
 
 const ATTACK_COOLDOWN = 0.6; // seconds between local attacks
 const MOB_ATTACK_RANGE = 3.2; // must match server's MOB_ATTACK_RANGE
@@ -51,6 +54,7 @@ const local = {
   alive: true,
   moveSpeed: 7, // units/sec
   attackCooldownRemaining: 0, // seconds left before another attack can fire
+  inventory: [], // [{ itemId, name, icon, qty }], server-authoritative
 };
 
 const remotePlayers = new Map(); // id -> RemotePlayer
@@ -58,6 +62,33 @@ const mobs = new Map(); // id -> Mob
 const labelEls = new Map(); // id -> HTMLDivElement (name tag), shared by players + mobs
 const healthBarEls = new Map(); // id -> { outer, fill } HTMLDivElements, shared by players + mobs
 const damageNumbers = new DamageNumbers(labelsEl);
+let inventoryOpen = false;
+
+/** Rebuilds the inventory panel's grid from local.inventory, padding out to
+ * INVENTORY_SLOT_COUNT empty slots so unused capacity is visible. */
+function renderInventory() {
+  if (!inventoryGridEl) return;
+  inventoryGridEl.innerHTML = "";
+  for (let i = 0; i < INVENTORY_SLOT_COUNT; i++) {
+    const slot = local.inventory[i];
+    const div = document.createElement("div");
+    div.className = "inventory-slot" + (slot ? "" : " empty");
+    if (slot) {
+      div.title = `${slot.name} x${slot.qty}`;
+      div.innerHTML =
+        `<span class="item-icon">${slot.icon}</span>` +
+        (slot.qty > 1 ? `<span class="item-qty">${slot.qty}</span>` : "");
+    }
+    inventoryGridEl.appendChild(div);
+  }
+}
+
+function updateInventoryToggle() {
+  if (!inventoryToggle.requested) return;
+  inventoryToggle.requested = false;
+  inventoryOpen = !inventoryOpen;
+  if (inventoryPanelEl) inventoryPanelEl.classList.toggle("hidden", !inventoryOpen);
+}
 
 function makeLabel(text, variant) {
   const div = document.createElement("div");
@@ -114,6 +145,8 @@ function startGame(character) {
       local.hp = data.self.hp ?? 100;
       local.maxHp = data.self.maxHp ?? 100;
       local.alive = data.self.alive ?? true;
+      local.inventory = data.self.inventory || [];
+      renderInventory();
 
       local.mesh = createCharacterMesh(data.self.color);
       local.mesh.position.set(data.self.x, data.self.y, data.self.z);
@@ -487,6 +520,7 @@ function animate() {
   updateCameraOrbit(dt);
   updateLocalPlayer(dt);
   updateLocalAttack(dt);
+  updateInventoryToggle();
 
   for (const rp of remotePlayers.values()) rp.update(dt);
   for (const mob of mobs.values()) mob.update(dt);

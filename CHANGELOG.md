@@ -7,6 +7,17 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Player inventory: each player now has a server-authoritative inventory
+  (`inventory` array on the player object in `server/index.js`, capped at
+  `MAX_INVENTORY_SLOTS` = 20, with items stacking by id via
+  `addItemToInventory()`). New players are granted a small starter kit (1
+  Rusty Sword, 3 Health Draughts) so the panel has something to show before
+  item pickups (a later roadmap item) exist. Client-side, press `I` to toggle
+  an inventory panel (`#inventory-panel` in `client/index.html`, rendered by
+  `renderInventory()` in `client/src/main.js`) showing a 4-column grid of 20
+  slots — filled slots show an icon and stack count, empty ones are dashed
+  placeholders. No new network events were needed: the inventory rides along
+  on the existing `init` payload as part of the player's own state.
 - Character creation screen: before joining, players now pick a display name and a color from a palette on a pre-game overlay (`client/src/characterCreate.js`, wired into `client/index.html` as `#login-screen`). The choice is sent to the server as socket.io auth and replaces the old behavior of auto-assigning a random name/color on connect. The server validates and sanitizes both fields (`sanitizeChosenName`/`sanitizeChosenColor` in `server/index.js`) and falls back to a random guest name/color if the input is missing or invalid, so older or malformed clients still work.
 - Respawn handling for mobs and players:
   - Defeated mobs return to life at their home spawn point 15 seconds after
