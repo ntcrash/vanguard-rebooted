@@ -41,12 +41,15 @@ const local = {
   name: null,
   mesh: null,
   rotY: 0,
+  hp: 100,
+  maxHp: 100,
   moveSpeed: 7, // units/sec
   attackCooldownRemaining: 0, // seconds left before another attack can fire
 };
 
 const remotePlayers = new Map(); // id -> RemotePlayer
 const labelEls = new Map(); // id -> HTMLDivElement (name tag)
+const healthBarEls = new Map(); // id -> { outer, fill } HTMLDivElements
 
 function makeLabel(text, isSelf) {
   const div = document.createElement("div");
@@ -54,6 +57,24 @@ function makeLabel(text, isSelf) {
   div.textContent = text;
   labelsEl.appendChild(div);
   return div;
+}
+
+function makeHealthBar() {
+  const outer = document.createElement("div");
+  outer.className = "health-bar";
+  const fill = document.createElement("div");
+  fill.className = "health-bar-fill";
+  outer.appendChild(fill);
+  labelsEl.appendChild(outer);
+  return { outer, fill };
+}
+
+function setHealthBarHp(id, hp, maxHp) {
+  const bar = healthBarEls.get(id);
+  if (!bar) return;
+  const pct = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) * 100 : 0;
+  bar.fill.style.width = `${pct}%`;
+  bar.fill.classList.toggle("low", pct <= 35);
 }
 
 // ---- Chat -----------------------------------------------------------------------
@@ -81,11 +102,15 @@ net = connectToServer({
     local.id = data.id;
     local.name = data.self.name;
     local.rotY = data.self.rotY;
+    local.hp = data.self.hp ?? 100;
+    local.maxHp = data.self.maxHp ?? 100;
 
     local.mesh = createCharacterMesh(data.self.color);
     local.mesh.position.set(data.self.x, data.self.y, data.self.z);
     scene.add(local.mesh);
     labelEls.set(local.id, makeLabel(local.name, true));
+    healthBarEls.set(local.id, makeHealthBar());
+    setHealthBarHp(local.id, local.hp, local.maxHp);
 
     statusEl.textContent = `Connected as ${local.name}`;
     chat.addSystemLine(`You joined as ${local.name}.`);
@@ -117,6 +142,11 @@ net = connectToServer({
       label.remove();
       labelEls.delete(data.id);
     }
+    const bar = healthBarEls.get(data.id);
+    if (bar) {
+      bar.outer.remove();
+      healthBarEls.delete(data.id);
+    }
   },
 
   onChat: (data) => {
@@ -133,6 +163,8 @@ function spawnRemote(p) {
   const rp = new RemotePlayer(scene, p);
   remotePlayers.set(p.id, rp);
   labelEls.set(p.id, makeLabel(p.name, false));
+  healthBarEls.set(p.id, makeHealthBar());
+  setHealthBarHp(p.id, rp.hp, rp.maxHp);
 }
 
 // ---- Movement + camera update ----------------------------------------------------
@@ -141,6 +173,7 @@ const _forward = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _move = new THREE.Vector3();
 const _headPos = new THREE.Vector3();
+const _healthPos = new THREE.Vector3();
 const _screen = new THREE.Vector3();
 
 const WORLD_BOUNDS = 90;
@@ -233,6 +266,17 @@ function maybeSendMove(now) {
   }
 }
 
+function projectToScreen(div, worldPos) {
+  _screen.copy(worldPos).project(camera);
+  if (_screen.z > 1) {
+    div.style.display = "none";
+    return;
+  }
+  div.style.display = "block";
+  div.style.left = `${(_screen.x * 0.5 + 0.5) * window.innerWidth}px`;
+  div.style.top = `${(-_screen.y * 0.5 + 0.5) * window.innerHeight}px`;
+}
+
 function updateLabels() {
   for (const [id, div] of labelEls) {
     let worldPos;
@@ -245,14 +289,14 @@ function updateLabels() {
       worldPos = rp.headWorldPosition(_headPos);
     }
 
-    _screen.copy(worldPos).project(camera);
-    if (_screen.z > 1) {
-      div.style.display = "none";
-      continue;
+    projectToScreen(div, worldPos);
+
+    const bar = healthBarEls.get(id);
+    if (bar) {
+      const barPos = _healthPos.copy(worldPos);
+      barPos.y += 0.32; // sit just above the name tag
+      projectToScreen(bar.outer, barPos);
     }
-    div.style.display = "block";
-    div.style.left = `${(_screen.x * 0.5 + 0.5) * window.innerWidth}px`;
-    div.style.top = `${(-_screen.y * 0.5 + 0.5) * window.innerHeight}px`;
   }
 }
 

@@ -43,6 +43,27 @@ html, body {
   color: #7ee0ff;
 }
 
+.health-bar {
+  width: 46px;
+  height: 5px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+  transform: translate(-50%, -100%);
+}
+
+.health-bar-fill {
+  height: 100%;
+  width: 100%;
+  background: #4caf50;
+  transition: width 0.15s ease, background-color 0.15s ease;
+}
+
+.health-bar-fill.low {
+  background: #e04b3a;
+}
+
 #hud {
   position: absolute;
   top: 12px;

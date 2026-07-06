@@ -98,6 +98,8 @@ export class RemotePlayer {
   constructor(scene, data) {
     this.id = data.id;
     this.name = data.name;
+    this.hp = data.hp ?? 100;
+    this.maxHp = data.maxHp ?? 100;
     this.mesh = createCharacterMesh(data.color);
     this.mesh.position.set(data.x, data.y, data.z);
     this.mesh.rotation.y = data.rotY;
@@ -135,9 +137,9 @@ export class RemotePlayer {
     });
   }
 
-  headWorldPosition(out) {
+  headWorldPosition(out, extra = 0) {
     out.copy(this.mesh.position);
-    out.y += 2.3;
+    out.y += 2.3 + extra;
     return out;
   }
 }

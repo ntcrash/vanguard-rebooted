@@ -7,6 +7,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Health bars floating above every character (self and remote players), tracked
+  server-side (`hp`/`maxHp` per player, defaulting to 100/100) and rendered as a
+  small DOM bar just above each player's name tag, color-shifting to red at low HP.
 - Basic melee attack: left-click (a quick click, not a camera drag) or the `F`/
   `Space` keybind triggers a weapon swing animation with a client-enforced
   cooldown and a HUD cooldown bar.

@@ -5,7 +5,6 @@ reprioritized based on what's more fun to build/play.
 
 ## v0.2 — Combat basics
 
-- [ ] Health bars above characters
 - [ ] Simple mob NPCs (stationary or wandering) that can be attacked and defeated
 - [ ] Damage numbers / hit feedback
 - [ ] Respawn handling for players and mobs
