@@ -4,11 +4,20 @@ import * as THREE from "three";
 // Deliberately built from the same primitive-shape philosophy as player.js —
 // a low-poly "boar" so mobs read as clearly non-player at a glance.
 
-export function createMobMesh() {
+// Wolves (Whispering Forest) reuse the same low-poly body as the meadow
+// boars, just re-tinted grey rather than modeled from scratch -- keeps the
+// same "cheap primitives, not a character artist's portfolio" philosophy.
+const WOLF_COLORS = { body: 0x7d8188, leg: 0x54575c };
+const BOAR_COLORS = { body: 0x7a5233, leg: 0x4f3420 };
+
+export function createMobMesh(name) {
   const group = new THREE.Group();
 
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x7a5233, roughness: 0.9 });
-  const legMat = new THREE.MeshStandardMaterial({ color: 0x4f3420, roughness: 0.9 });
+  const isWolf = typeof name === "string" && name.toLowerCase().includes("wolf");
+  const palette = isWolf ? WOLF_COLORS : BOAR_COLORS;
+
+  const bodyMat = new THREE.MeshStandardMaterial({ color: palette.body, roughness: 0.9 });
+  const legMat = new THREE.MeshStandardMaterial({ color: palette.leg, roughness: 0.9 });
 
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.6, 1.3), bodyMat);
   body.position.y = 0.55;
@@ -88,7 +97,7 @@ export class Mob {
     this.hp = data.hp;
     this.maxHp = data.maxHp;
     this.alive = data.alive;
-    this.mesh = createMobMesh();
+    this.mesh = createMobMesh(data.name);
     this.mesh.position.set(data.x, data.y, data.z);
     this.mesh.rotation.y = data.rotY || 0;
     this.target = { x: data.x, y: data.y, z: data.z, rotY: data.rotY || 0 };

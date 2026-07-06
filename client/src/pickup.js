@@ -7,6 +7,7 @@ import * as THREE from "three";
 const PICKUP_COLORS = {
   "health-draught": 0xff4d4d,
   "gold-coin": 0xffd23f,
+  "moonpetal": 0xaab6ff,
 };
 const DEFAULT_COLOR = 0xbfd8ff;
 
