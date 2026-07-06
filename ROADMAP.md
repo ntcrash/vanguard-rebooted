@@ -4,7 +4,7 @@ A rough, non-binding order of what's planned next. Anything here can be
 reprioritized based on what's more fun to build/play.
 
 ## v0.2 — Combat basics
-
+- [ ] Add login, character creation
 - [ ] Damage numbers / hit feedback
 - [ ] Respawn handling for players and mobs
 
@@ -27,6 +27,7 @@ reprioritized based on what's more fun to build/play.
 - [ ] Deployment guide for hosting the server on a cloud provider
 - [ ] Basic anti-cheat / server-side movement validation (speed hacks, teleport hacks)
 - [ ] Mobile/touch controls
+- [ ] Enhance the graphics
 
 ## Later / stretch ideas
 

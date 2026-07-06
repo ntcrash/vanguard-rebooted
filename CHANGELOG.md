@@ -29,6 +29,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   other connected players see your swing animation in real time.
 - Server-side cooldown enforcement on the `attack` event to prevent spam/cheating.
 
+### Fixed
+
+- Strafe movement direction was inverted: pressing A/Left strafed right and
+  D/Right strafed left, relative to the camera. The camera-relative right
+  vector in `updateLocalPlayer()` (`client/src/main.js`) had a flipped sign;
+  it's now derived correctly from the forward vector so A/D strafe the way
+  they visually should.
+
 ## [0.1.0] - 2026-07-05
 
 ### Added
