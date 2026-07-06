@@ -61,6 +61,12 @@ a full game.
   virtual joystick drives movement, a single-finger drag anywhere else on the
   scene orbits the camera exactly like a mouse drag, and dedicated Sprint/
   Attack/Inventory buttons cover the rest of the keyboard shortcuts
+- Day/night cycle and weather: a 5-minute real-time day/night loop smoothly
+  fades the sky, sun, ambient light, and fog between midnight/dawn/noon/dusk,
+  with a HUD label showing the current time of day; forest gateway torches
+  burn visibly brighter at night. Rain occasionally rolls in (a following
+  particle-based shower centered on your position) for a stretch of every
+  10-minute weather cycle
 
 Accounts are stored alongside player saves in `server/data/accounts.json`
 (gitignored, password hashes only — never plaintext).

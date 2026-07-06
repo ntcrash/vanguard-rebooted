@@ -99,6 +99,18 @@ html, body {
   display: none;
 }
 
+#time-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+  color: #9fb3c8;
+}
+
+#time-label:empty {
+  display: none;
+}
+
 #help {
   font-size: 12px;
   opacity: 0.75;

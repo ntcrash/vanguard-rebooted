@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { buildWorld, torchFlicker } from "./world.js";
+import { buildWorld, torchFlicker, updateDayNight, updateRain, dayPeriodLabel, dayNightPhase } from "./world.js";
 import {
   createCharacterMesh,
   applyEquipment,
@@ -19,6 +19,7 @@ import { initCharacterCreate } from "./characterCreate.js";
 const canvas = document.getElementById("scene");
 const statusEl = document.getElementById("status");
 const zoneLabelEl = document.getElementById("zone-label");
+const timeLabelEl = document.getElementById("time-label");
 const labelsEl = document.getElementById("labels");
 const cooldownFillEl = document.getElementById("attack-cooldown-fill");
 const levelDisplayEl = document.getElementById("level-display");
@@ -51,7 +52,7 @@ renderer.toneMappingExposure = 1.05;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-const { torches } = buildWorld(scene);
+const { torches, sky, sun, hemi, rain } = buildWorld(scene);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
 const cameraState = { azimuth: Math.PI, elevation: 0.45, distance: 8 };
@@ -516,6 +517,7 @@ const FOREST_ZONE_Z = 90; // must match server's FOREST_ZONE_Z
 let lastSendAt = 0;
 let lastSent = { x: null, y: null, z: null, rotY: null };
 let currentZoneName = null; // last zone name shown in the HUD, so we only touch the DOM on change
+let currentTimeLabel = null; // last day/night label shown in the HUD, so we only touch the DOM on change
 
 /** Updates the "Meadow" / "Whispering Forest" HUD label from the local
  * player's current z position. Purely cosmetic client-side zone detection —
@@ -527,6 +529,17 @@ function updateZoneLabel() {
   currentZoneName = zoneName;
   zoneLabelEl.textContent = zoneName;
   zoneLabelEl.classList.toggle("forest", zoneName === "Whispering Forest");
+}
+
+/** Updates the "Dawn"/"Day"/"Dusk"/"Night" HUD label from the day/night
+ * cycle's current phase. Purely cosmetic — the cycle itself is client-side
+ * and not synced across players, same as the meadow/forest zone label. */
+function updateTimeLabel(elapsedSeconds) {
+  if (!timeLabelEl) return;
+  const label = dayPeriodLabel(dayNightPhase(elapsedSeconds));
+  if (label === currentTimeLabel) return;
+  currentTimeLabel = label;
+  timeLabelEl.textContent = label;
 }
 
 function updateCameraOrbit(dt) {
@@ -704,9 +717,18 @@ function animate() {
   updateLocalAttack(dt);
   updateInventoryToggle();
   updateZoneLabel();
+
+  const dayNight = updateDayNight(scene, sky, sun, hemi, clock.elapsedTime);
+  updateTimeLabel(clock.elapsedTime);
+  // Torches burn brighter relative to the ambient dark at night, and dimmer
+  // (barely noticeable) in full daylight — baseIntensity feeds straight into
+  // torchFlicker()'s existing dual-sine wobble, so the flicker itself is
+  // unaffected, only its average brightness.
+  const torchBase = THREE.MathUtils.lerp(1.0, 1.9, dayNight.nightFactor);
   for (const torch of torches) {
-    torch.light.intensity = torchFlicker(clock.elapsedTime, torch.seed);
+    torch.light.intensity = torchFlicker(clock.elapsedTime, torch.seed, torchBase);
   }
+  updateRain(rain, dt, clock.elapsedTime, local.mesh?.position.x ?? 0, local.mesh?.position.z ?? 0);
 
   for (const rp of remotePlayers.values()) rp.update(dt);
   for (const mob of mobs.values()) mob.update(dt);

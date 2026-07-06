@@ -8,4 +8,3 @@ reprioritized based on what's more fun to build/play.
 - [ ] Voice chat or proximity chat
 - [ ] Guilds/parties
 - [ ] Simple quest system
-- [ ] Day/night cycle and weather
