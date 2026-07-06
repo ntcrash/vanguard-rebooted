@@ -367,6 +367,19 @@ function startGame(character) {
       }
     },
 
+    // The server's anti-cheat rejected a move we sent (moved too far too
+    // fast -- almost always a lag spike rather than an actual hack attempt
+    // for a legit client). Snap back to the authoritative position/rotation
+    // it gives us so we don't keep sending moves relative to a position the
+    // server never accepted, which would just get rejected again.
+    onMoveRejected: (data) => {
+      if (!local.mesh) return;
+      local.mesh.position.set(data.x, data.y, data.z);
+      local.mesh.rotation.y = data.rotY;
+      // Force the next move tick to re-send from this corrected position.
+      lastSent = { x: null, y: null, z: null, rotY: null };
+    },
+
     onItemPickedUp: (data) => {
       // The server already removed this pickup for everyone; only the
       // looting player's inventory changes (via the separate
