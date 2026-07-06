@@ -98,6 +98,9 @@ file, e.g.:
 VITE_SERVER_URL=http://192.168.1.23:3000
 ```
 
+Deploying this somewhere other players can reach it? See
+[DEPLOYMENT.md](./DEPLOYMENT.md).
+
 ## Controls
 
 | Input                  | Action                          |
@@ -117,5 +120,6 @@ This project follows [Gitflow](https://nvie.com/posts/a-successful-git-branching
 `main` holds released/stable code, `develop` is the integration branch, and new
 work happens on `feature/*` branches merged into `develop`.
 
-See [CHANGELOG.md](./CHANGELOG.md) for release history and
-[ROADMAP.md](./ROADMAP.md) for planned features.
+See [CHANGELOG.md](./CHANGELOG.md) for release history,
+[ROADMAP.md](./ROADMAP.md) for planned features, and
+[DEPLOYMENT.md](./DEPLOYMENT.md) for hosting this on a cloud provider.

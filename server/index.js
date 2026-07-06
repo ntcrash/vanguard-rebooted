@@ -296,10 +296,20 @@ function tickMobs() {
   io.emit("mobsState", mobsSnapshot());
 }
 
+// Allowed browser origin(s) for the Socket.io handshake. Defaults to "*" for
+// local development (any origin, including file:// or a different port), but
+// a real deployment should set CORS_ORIGIN to the client's actual origin
+// (e.g. "https://play.example.com") so a page on some other domain can't open
+// a socket against this server. Comma-separate multiple origins, e.g.
+// "https://play.example.com,https://staging.example.com" — see DEPLOYMENT.md.
+const CORS_ORIGIN = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim()).filter(Boolean)
+  : "*";
+
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: { origin: "*" }, // local prototype only — tighten before any real deployment
+  cors: { origin: CORS_ORIGIN },
 });
 
 app.get("/health", (_req, res) =>
