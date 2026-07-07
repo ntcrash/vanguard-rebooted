@@ -8,6 +8,7 @@ import { loadPlayerRecord, savePlayerRecord, savePlayerRecords } from "./playerS
 import { resolveLogin } from "./accountStore.js";
 import { QUEST_DEFS, initQuestState, advanceKillQuests, advanceCollectQuests } from "./quests.js";
 import { CHARACTER_CLASSES, DEFAULT_CLASS_ID, sanitizeClassId, classMaxHp, classDamage } from "./classes.js";
+import { spellForClass, isSpellUnlocked, isSpellOffCooldown, computeSpellDamage } from "./spells.js";
 import { PARTY_MAX_SIZE, createParty, isPartyFull, isPartyMember, isPartyLeader, addPartyMember, removePartyMember } from "./parties.js";
 import { computeVoicePairs, diffVoicePairs, splitPairKey } from "./voiceProximity.js";
 import {
@@ -778,6 +779,14 @@ io.on("connection", (socket) => {
     name: chosenName,
     color: sanitizeChosenColor(auth.color) || randomColor(),
     characterClass,
+    // This class's single spell (see server/spells.js) -- sent to the owning
+    // client via "init" so its HUD knows the spell's name/icon/level-gate/
+    // cooldown without a second lookup table duplicated client-side the way
+    // characterCreate.js's CLASSES array already is. `lastSpellAt` is a
+    // transient cooldown clock, not persisted (same treatment as
+    // `lastAttackAt` below).
+    spell: spellForClass(characterClass),
+    lastSpellAt: 0,
     x: (Math.random() - 0.5) * 20,
     y: 0,
     z: (Math.random() - 0.5) * 20,
@@ -957,6 +966,77 @@ io.on("connection", (socket) => {
     acquireAggro(mob, p.id, now);
 
     if (p.alive && Math.random() < MOB_COUNTER_CHANCE) {
+      strikePlayer(mob, p);
+    }
+  });
+
+  // ---- Spell attacks -------------------------------------------------------
+  // Each class has exactly one spell for now (see server/spells.js),
+  // unlocked at spell.minLevel and gated by spell.cooldownMs entirely
+  // independently of ATTACK_COOLDOWN_MS above -- a player can weave spell
+  // casts and melee swings together rather than one blocking the other.
+  // Damage reuses the same mob-hp/death/quest/xp pipeline the "attack"
+  // handler above does. A melee-range spell (everyone except the mage) also
+  // risks the same immediate counter-hit chance a melee swing does; the
+  // mage's longer-ranged bolt does not, since standing at range is the whole
+  // point of playing one.
+  socket.on("castSpell", (data) => {
+    const p = players.get(socket.id);
+    if (!p || !p.alive) return;
+
+    const spell = p.spell;
+    if (!spell) return; // shouldn't happen -- every class has exactly one spell
+
+    const now = Date.now();
+    if (!isSpellUnlocked(spell, p.level)) {
+      socket.emit("spellRejected", { reason: `${spell.name} unlocks at level ${spell.minLevel}.` });
+      return;
+    }
+    if (!isSpellOffCooldown(p.lastSpellAt, spell, now)) {
+      socket.emit("spellRejected", { reason: `${spell.name} is still on cooldown.` });
+      return;
+    }
+
+    const targetMobId = data && typeof data === "object" ? data.targetMobId : null;
+    const mob = typeof targetMobId === "string" ? mobs.get(targetMobId) : null;
+    if (!mob || !mob.alive) {
+      socket.emit("spellRejected", { reason: "No target in range." });
+      return;
+    }
+    const dist = Math.hypot(mob.x - p.x, mob.z - p.z);
+    if (dist > spell.range) {
+      socket.emit("spellRejected", { reason: "Target out of range." });
+      return;
+    }
+
+    p.lastSpellAt = now;
+    socket.broadcast.emit("playerCastSpell", { id: socket.id, spellId: spell.id });
+
+    if (spell.selfHeal && p.alive) {
+      p.hp = Math.min(p.maxHp, p.hp + spell.selfHeal);
+      io.emit("playerHealed", { id: p.id, hp: p.hp, amount: spell.selfHeal });
+    }
+
+    const dmg = computeSpellDamage(p.characterClass, MOB_DAMAGE, spell);
+    mob.hp = Math.max(0, mob.hp - dmg);
+    if (mob.hp <= 0) {
+      mob.alive = false;
+      io.emit("mobDied", { id: mob.id, name: mob.name, killedBy: p.name });
+      setTimeout(() => respawnMob(mob), MOB_RESPAWN_MS);
+      awardXp(p, MOB_XP_REWARD);
+
+      const affectedQuests = advanceKillQuests(p.quests, mob.name);
+      for (const questId of affectedQuests) {
+        emitQuestProgress(p, questId);
+        if (p.quests[questId].completed) grantQuestReward(p, questId);
+      }
+      return;
+    }
+
+    io.emit("mobDamaged", { id: mob.id, hp: mob.hp });
+    acquireAggro(mob, p.id, now);
+
+    if (dist <= MOB_ATTACK_RANGE && p.alive && Math.random() < MOB_COUNTER_CHANCE) {
       strikePlayer(mob, p);
     }
   });

@@ -7,10 +7,10 @@
 // way color is. Kept in its own module (mirroring quests.js) so the plain
 // multiplier math can be unit-tested without booting the socket.io server.
 //
-// Deliberately simple for now: a class only nudges maxHp and melee damage.
-// Spell attacks are a separate, later roadmap item ("spells should be based
-// on character class, and level") — once that lands, each class's actual
-// spell kit belongs here too, alongside these multipliers.
+// A class nudges maxHp and melee damage here; each class's actual spell (one
+// per class for now, level-gated) lives in the separate server/spells.js
+// module instead of alongside these multipliers, since a spell needs its own
+// cooldown/range/self-heal fields that don't apply to plain melee stats.
 
 export const CHARACTER_CLASSES = {
   warrior: {

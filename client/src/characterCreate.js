@@ -33,7 +33,7 @@ const CLASSES = [
   { id: "warrior", name: "Warrior", description: "Balanced fighter — steady HP and damage." },
   { id: "paladin", name: "Paladin", description: "Tanky defender — highest HP, softest hits." },
   { id: "rogue", name: "Rogue", description: "Fragile striker — lowest HP, hardest hits." },
-  { id: "mage", name: "Mage", description: "Glass cannon — low HP, strong hits ahead of a future spellbook." },
+  { id: "mage", name: "Mage", description: "Glass cannon — low HP, strong hits, and a ranged Arcane Bolt spell." },
 ];
 
 const NAME_PATTERN = /^[A-Za-z0-9 _-]{1,20}$/;

@@ -39,6 +39,15 @@ export function connectToServer(handlers, character) {
   socket.on("playerLeft", (data) => handlers.onPlayerLeft?.(data));
   socket.on("chat", (data) => handlers.onChat?.(data));
   socket.on("playerAttacked", (data) => handlers.onPlayerAttacked?.(data));
+  // Spell attacks (server/spells.js): "playerCastSpell" plays another
+  // player's spell-cast glow (mirrors "playerAttacked"'s melee swing);
+  // "spellRejected" is a personal notice (level-gate/cooldown/no-target) the
+  // same way "partyNotice" is; "playerHealed" is a class spell's self-heal
+  // (currently just the paladin's) landing, for both the caster's own HUD
+  // and a floating heal number on whoever else might be watching.
+  socket.on("playerCastSpell", (data) => handlers.onPlayerCastSpell?.(data));
+  socket.on("spellRejected", (data) => handlers.onSpellRejected?.(data));
+  socket.on("playerHealed", (data) => handlers.onPlayerHealed?.(data));
   socket.on("mobsState", (data) => handlers.onMobsState?.(data));
   socket.on("mobDamaged", (data) => handlers.onMobDamaged?.(data));
   socket.on("mobDied", (data) => handlers.onMobDied?.(data));
@@ -102,6 +111,9 @@ export function connectToServer(handlers, character) {
     },
     sendAttack(targetMobId) {
       socket.emit("attack", targetMobId ? { targetMobId } : undefined);
+    },
+    sendSpellCast(targetMobId) {
+      socket.emit("castSpell", targetMobId ? { targetMobId } : undefined);
     },
     sendEquip(itemId) {
       socket.emit("equipItem", itemId);

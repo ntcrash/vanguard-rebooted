@@ -10,6 +10,31 @@ tagged there.
 
 ### Added
 
+- Spell attacks: each character class now has one signature spell, unlocked
+  at level 3 and gated by its own cooldown independent of the plain melee
+  attack — Warrior's Rending Strike, Paladin's Holy Smite (which also heals
+  the caster a little), Rogue's Shadow Strike, and the Mage's longer-ranged
+  Arcane Bolt. Cast with `Q` (or the new 🔮 touch button) at the nearest
+  in-range mob roughly in front of you, mirroring the existing melee-attack
+  targeting. A new `server/spells.js` module (mirroring `classes.js`/
+  `quests.js`'s "pure logic in its own file" pattern) holds each class's
+  `SPELL_DEFS` (name/icon/minLevel/cooldownMs/damageMultiplier/range/
+  selfHeal) plus `spellForClass()`/`isSpellUnlocked()`/`isSpellOffCooldown()`/
+  `computeSpellDamage()` helpers; damage is the same shared melee baseline
+  run through the caster's class multiplier and then the spell's own
+  multiplier, so a spell always hits harder than a plain melee swing.
+  `server/index.js`'s new `castSpell` handler re-validates level/cooldown/
+  range server-side (rejections come back as `spellRejected` with a
+  human-readable reason) and reuses the existing `mobDamaged`/`mobDied`/XP/
+  quest pipeline the melee `attack` handler already drives; a melee-range
+  spell also risks the same immediate mob counter-hit chance melee does,
+  but the Mage's ranged bolt does not. The HUD gained a spell name/icon row
+  (showing a 🔒 "unlocks at level X" hint before that) and its own cooldown
+  bar beneath the existing attack cooldown bar; a class's spell-cast plays a
+  brief blue glow pulse on the caster's torso (`triggerSpellCast()`/
+  `updateSpellCast()` in `client/src/player.js`), distinct from the melee
+  swing animation, visible on remote players too via a new
+  `playerCastSpell` broadcast.
 - Character classes: choose Warrior, Paladin, Rogue, or Mage on the login
   screen alongside your name/password/color (new `#class-options` picker in
   `client/src/characterCreate.js`/`index.html`). A new `server/classes.js`

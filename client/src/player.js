@@ -17,6 +17,16 @@ const ATTACK_DURATION = 0.35; // seconds, resting -> full swing -> resting
 const ARM_REST_ROTATION_X = -0.2;
 const ARM_SWING_ROTATION_X = 1.8;
 
+// Spell-cast visual: a brief emissive glow pulse on the torso, distinct from
+// the melee swing above so a spell reads differently even though both are
+// triggered by the same "attack an in-range mob" flow client-side (see
+// main.js's triggerSpellCast/updateSpellCast usage). Deliberately class-
+// agnostic (one shared glow color) to keep this first pass simple -- a
+// later pass could tint it per class (see server/spells.js's SPELL_DEFS) if
+// that's worth the extra bookkeeping.
+const SPELL_CAST_DURATION = 0.45; // seconds, resting -> full glow -> resting
+const SPELL_GLOW_COLOR = new THREE.Color(0x8fd6ff);
+
 // ---- Walk/run locomotion -----------------------------------------------------
 // Legs and the non-weapon arm swing in a simple alternating gait, driven purely
 // by how fast a character is currently moving (see updateLocomotion below) —
@@ -58,6 +68,7 @@ export function createCharacterMesh(color, equipment = {}) {
   body.position.y = 1.15;
   body.castShadow = true;
   group.add(body);
+  group.userData.body = body; // spell-cast glow pulse (triggerSpellCast/updateSpellCast) targets this material
 
   const head = new THREE.Mesh(
     new THREE.SphereGeometry(0.32, 16, 16),
@@ -132,6 +143,8 @@ export function createCharacterMesh(color, equipment = {}) {
   // Per-mesh attack animation state, driven by triggerAttack()/updateAttack().
   group.userData.armPivot = armPivot;
   group.userData.attack = { active: false, t: 0 };
+  // Per-mesh spell-cast glow state, driven by triggerSpellCast()/updateSpellCast().
+  group.userData.spellCast = { active: false, t: 0 };
   group.userData.weapon = null; // set by applyEquipment() below
   group.userData.helmet = null; // head-slot gear mesh, added by applyEquipment()
   group.userData.chestplate = null; // body-slot gear mesh, added by applyEquipment()
@@ -262,6 +275,34 @@ export function updateAttack(mesh, dt) {
   }
 }
 
+/** Starts (or restarts) the spell-cast glow animation on a character mesh. */
+export function triggerSpellCast(mesh) {
+  const state = mesh?.userData?.spellCast;
+  if (!state) return;
+  state.active = true;
+  state.t = 0;
+}
+
+/** Advances a character mesh's spell-cast glow animation. Safe to call every
+ * frame -- no-ops once the glow has finished (state.active false) so it
+ * doesn't fight with the torso material the rest of the time. */
+export function updateSpellCast(mesh, dt) {
+  const state = mesh?.userData?.spellCast;
+  const body = mesh?.userData?.body;
+  if (!state || !body || !state.active) return;
+
+  state.t += dt;
+  const progress = Math.min(state.t / SPELL_CAST_DURATION, 1);
+  const glow = Math.sin(progress * Math.PI); // 0 -> 1 -> 0, same easing shape as the melee swing
+
+  body.material.emissive.setRGB(SPELL_GLOW_COLOR.r * glow, SPELL_GLOW_COLOR.g * glow, SPELL_GLOW_COLOR.b * glow);
+
+  if (progress >= 1) {
+    state.active = false;
+    body.material.emissive.setRGB(0, 0, 0);
+  }
+}
+
 /** Advances a character mesh's walk/run gait — leg swing + counter-swung
  * off-hand arm — to match `speed` (current horizontal movement, units/sec).
  * Purely visual: both frequency and stride amplitude scale with speed, so a
@@ -325,6 +366,11 @@ export class RemotePlayer {
     triggerAttack(this.mesh);
   }
 
+  /** Plays the spell-cast glow animation, triggered by a "playerCastSpell" event. */
+  triggerSpellCast() {
+    triggerSpellCast(this.mesh);
+  }
+
   /** Re-skins this player's mesh to match a new equipment loadout, triggered
    * by a "playerEquipmentChanged" event. */
   setEquipment(equipment) {
@@ -353,6 +399,7 @@ export class RemotePlayer {
     updateLocomotion(this.mesh, dt, speed);
 
     updateAttack(this.mesh, dt);
+    updateSpellCast(this.mesh, dt);
   }
 
   dispose(scene) {

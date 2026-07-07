@@ -21,15 +21,17 @@ export class DamageNumbers {
   /**
    * Spawns a floating number at a world position.
    * @param {THREE.Vector3} worldPos - where the hit landed; not retained, copied internally.
-   * @param {number} amount - damage dealt; rendered rounded and prefixed with "-".
-   * @param {{ finishing?: boolean }} [opts] - `finishing` styles a killing-blow hit distinctly.
+   * @param {number} amount - damage/heal amount; rendered rounded, prefixed "-" (damage) or "+" (heal).
+   * @param {{ finishing?: boolean, heal?: boolean }} [opts] - `finishing` styles a killing-blow hit
+   *   distinctly; `heal` styles it as HP restored (a class spell's self-heal — see server/spells.js)
+   *   instead of damage taken.
    */
-  spawn(worldPos, amount, { finishing = false } = {}) {
+  spawn(worldPos, amount, { finishing = false, heal = false } = {}) {
     if (!Number.isFinite(amount) || amount <= 0) return;
 
     const el = document.createElement("div");
-    el.className = "damage-number" + (finishing ? " finishing" : "");
-    el.textContent = `-${Math.round(amount)}`;
+    el.className = "damage-number" + (finishing ? " finishing" : "") + (heal ? " heal" : "");
+    el.textContent = `${heal ? "+" : "-"}${Math.round(amount)}`;
     this.container.appendChild(el);
 
     const origin = worldPos.clone();

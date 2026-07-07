@@ -137,6 +137,37 @@ html, body {
   background: #7ee0ff;
 }
 
+#spell-info {
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 6px;
+  color: #8fd6ff;
+}
+
+#spell-info:empty {
+  display: none;
+}
+
+#spell-cooldown {
+  margin-top: 4px;
+  width: 120px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+#spell-cooldown-fill {
+  height: 100%;
+  width: 0%;
+  background: #6b7dff;
+  transition: width 0.05s linear, background-color 0.15s ease;
+}
+
+#spell-cooldown-fill.ready {
+  background: #8fd6ff;
+}
+
 #level-display {
   font-size: 12px;
   font-weight: 600;
@@ -216,6 +247,10 @@ html, body {
 .damage-number.finishing {
   color: #ff5a4a;
   font-size: 19px;
+}
+
+.damage-number.heal {
+  color: #6fe07e;
 }
 
 #inventory-panel {
