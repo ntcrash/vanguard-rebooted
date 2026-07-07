@@ -10,6 +10,40 @@ tagged there.
 
 ### Added
 
+- Desktop (Electron) client: `desktop/` wraps the exact same `client/` build
+  as a native window instead of a browser tab — no new game logic, no second
+  server-selection mechanism, just an alternate way to run the same client.
+  `desktop/main.js` is a minimal Electron main process — a single
+  `BrowserWindow` (1280x800, resizable down to 900x600, native menu bar
+  hidden) with `contextIsolation: true` / `nodeIntegration: false` / `sandbox:
+  true` (Electron's recommended secure defaults, no reason for the game
+  client to need raw Node access) and a `desktop/preload.js` that currently
+  only exposes a `window.vanguardDesktop.isElectron` flag via
+  `contextBridge` — a wiring point for a later desktop-only affordance (e.g.
+  native notifications or a "running in the desktop app" badge), not
+  something used yet. Which page loads depends on one env var:
+  `ELECTRON_START_URL` unset loads the already-built
+  `client/dist/index.html` (a "production-like" run, `npm start`);
+  set (`npm run dev` sets it to `http://localhost:5173`) loads the Vite dev
+  server directly instead, so the desktop window gets the client's normal
+  hot-reload loop rather than a static build. `VITE_SERVER_URL` is still
+  decided at `client` build time exactly as documented for every other
+  static host (see DEPLOYMENT.md §4) — this wrapper deliberately doesn't add
+  a runtime server-picker. New `desktop/package.json` (`vanguard-desktop`,
+  private, `electron` as its only devDependency, `start`/`dev` scripts).
+  No installer/packaging tool (electron-builder/electron-forge) is wired up
+  yet — `desktop/` is meant to be run from source for now (see
+  DEPLOYMENT.md §8 and its "Not covered yet" entry). Verified with
+  `node --check` on both `desktop/main.js` and `desktop/preload.js` (this
+  sandbox's `npm install` can't reach the registry to actually install and
+  boot `electron` — same constraint noted for every other package in this
+  project — so syntax/structure checking plus a careful read against
+  Electron's documented `BrowserWindow`/`contextBridge`/security-guidance
+  APIs was the available verification path), a JSON validation pass on
+  `desktop/package.json`, and confirming `client/dist` and `desktop/dist`
+  (a future packaging output dir) are already covered by the repo's existing
+  blanket `dist/`/`node_modules/` `.gitignore` entries, so no `.gitignore`
+  changes were needed.
 - In-game (environment) graphics upgrade: three additions to `client/src/world.js`
   distinct from the earlier character-model visual work. (1) A shimmering pond
   in the meadow (`POND_POSITION` = (65, 60), clear of every existing NPC/

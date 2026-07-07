@@ -1,11 +1,15 @@
 # Deployment Guide
 
-This project is two independently deployable pieces:
+This project is two independently deployable pieces, plus an optional native
+wrapper around the client:
 
 ```
 server/   Node + Express + Socket.io realtime server (stateful — holds live
           player/mob state in memory, persists saves to server/data/*.json)
 client/   Three.js + Vite static site (builds to plain HTML/JS/CSS)
+desktop/  Electron wrapper that packages client/ as a native desktop app
+          (see §8) — not a separately deployed service, just an alternate
+          way to run the same client build
 ```
 
 The server needs a place that keeps a **long-running Node process** (not a
@@ -158,6 +162,33 @@ existing server/client hosting — signaling itself (who's near whom, and
 relaying the SDP/ICE handshake) is handled entirely by the existing
 Socket.io server at no extra infrastructure cost.
 
+## 8. Packaging the desktop (Electron) client
+
+`desktop/` is a thin [Electron](https://www.electronjs.org/) wrapper around
+the same static `client/` build — it doesn't add a second server-selection
+mechanism or duplicate any game logic, so most of §4 above still applies.
+
+To hand someone a desktop build instead of a URL:
+
+```bash
+cd client
+npm install
+VITE_SERVER_URL=https://your-server-host.example.com npm run build
+cd ../desktop
+npm install
+npm start   # sanity-check it locally first
+```
+
+This repo doesn't currently wire up an installer/packaging tool (e.g.
+[electron-builder](https://www.electron.build/) or
+[electron-forge](https://www.electronforge.io/)) — `desktop/` as committed is
+meant to be run from source (`npm start`) rather than distributed as a
+double-clickable `.app`/`.exe`. Adding one of those is a reasonable next step
+if this needs to go out to non-technical players; until then,
+`VITE_SERVER_URL` is still baked into `client/dist` at build time exactly as
+in §4, so rebuild `client/` (not `desktop/`) to point the desktop app at a
+different server.
+
 ## Not covered yet
 
 - No CI/CD pipeline is set up in this repo — deploys are triggered manually
@@ -168,3 +199,6 @@ Socket.io server at no extra infrastructure cost.
   than one instance behind a load balancer would need a shared state store
   (e.g. Redis) and Socket.io's Redis adapter — out of scope for this
   prototype.
+- No installer/auto-update story for `desktop/` — see §8. It runs fine from
+  source today; packaging it into a distributable, self-updating app is
+  future work if that becomes the primary way players get the game.
