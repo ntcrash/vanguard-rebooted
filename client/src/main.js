@@ -113,6 +113,7 @@ const local = {
   level: 1,
   xp: 0,
   xpToNext: 100,
+  characterClass: "warrior", // server/classes.js id, chosen once at account creation — server-authoritative
   inventory: [], // [{ itemId, name, icon, qty, slot }], server-authoritative
   equipment: { weapon: null, head: null, body: null }, // server-authoritative
   quests: {}, // { [questId]: { progress, completed } }, server-authoritative
@@ -320,9 +321,20 @@ function setHealthBarHp(id, hp, maxHp) {
   bar.fill.classList.toggle("low", pct <= 35);
 }
 
+/** Capitalizes a character class id ("warrior") into its display form
+ * ("Warrior") for the HUD — the server only ever sends the lowercase id
+ * (see server/classes.js), same as how mob/item ids are cased. */
+function classDisplayName(classId) {
+  if (!classId) return "";
+  return classId.charAt(0).toUpperCase() + classId.slice(1);
+}
+
 /** Refreshes the local player's level/XP HUD from local.level/xp/xpToNext. */
 function updateXpUI() {
-  if (levelDisplayEl) levelDisplayEl.textContent = `Level ${local.level}`;
+  if (levelDisplayEl) {
+    const className = classDisplayName(local.characterClass);
+    levelDisplayEl.textContent = className ? `Level ${local.level} ${className}` : `Level ${local.level}`;
+  }
   if (xpBarFillEl) {
     const pct = local.xpToNext > 0 ? Math.max(0, Math.min(1, local.xp / local.xpToNext)) * 100 : 0;
     xpBarFillEl.style.width = `${pct}%`;
@@ -404,6 +416,7 @@ function startGame(character) {
       local.level = data.self.level ?? 1;
       local.xp = data.self.xp ?? 0;
       local.xpToNext = data.self.xpToNext ?? 100;
+      local.characterClass = data.self.characterClass || "warrior";
       local.quests = data.self.quests || {};
       // A fresh connection never starts already in a party server-side (see
       // server/index.js's connection handler) -- reset any stale roster from

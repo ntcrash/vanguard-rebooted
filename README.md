@@ -15,6 +15,13 @@ a full game.
   login after that must use the same password (see `server/accountStore.js`);
   a wrong password is rejected outright rather than silently handing you a
   guest identity
+- Character classes: pick Warrior, Paladin, Rogue, or Mage on the login
+  screen the first time your account is created — each nudges your max HP
+  and melee damage differently (Paladin tankiest/softest hits, Rogue
+  squishiest/hardest hits, Warrior balanced, Mage a glass cannon), shown
+  alongside your level in the HUD (see `server/classes.js`). Your class is
+  locked in for that account from then on, the same way your name/password
+  are
 - 3D outdoor world (ground, grass, trees, rocks, soft shadows, a gradient sky
   dome, and fog) spanning two distinct zones — the starting Meadow and the
   Whispering Forest to the north, reached on foot past a pair of stone
