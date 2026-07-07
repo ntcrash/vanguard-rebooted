@@ -1097,6 +1097,17 @@ io.on("connection", (socket) => {
     io.emit("playerMicState", { id: p.id, micOn: p.micOn });
   });
 
+  // Explicit "Save Game" from the client's Esc menu -- distinct from the
+  // periodic autosave/save-on-disconnect above, this is a player-initiated
+  // save they can trigger any time and get immediate confirmation for
+  // ("saveComplete"), rather than trusting an invisible background timer.
+  socket.on("requestSave", () => {
+    const p = players.get(socket.id);
+    if (!p) return;
+    savePlayerRecord(p.name, playerSaveRecord(p));
+    socket.emit("saveComplete", { savedAt: Date.now() });
+  });
+
   socket.on("chat", (message) => {
     const p = players.get(socket.id);
     if (!p || typeof message !== "string") return;
