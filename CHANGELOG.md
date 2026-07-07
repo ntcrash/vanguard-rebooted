@@ -10,6 +10,32 @@ tagged there.
 
 ### Added
 
+- Character graphics upgrade: each class (Warrior/Paladin/Rogue/Mage) now has
+  a visually distinct silhouette instead of everyone sharing the exact same
+  primitive shape, layered on top of the existing capsule-torso mesh
+  (`client/src/player.js`). Warrior gets a broader torso plus steel
+  pauldrons and a steel collar; Paladin keeps the default frame but gains a
+  golden collar and a tabard chest plate; Rogue gets a slimmer torso and a
+  dark hood; Mage gets a pointed hat and a flowing robe skirt tinted the
+  same arcane blue-violet as the spell-cast glow, for a consistent palette.
+  A class-unique hood/hat is skipped whenever real head-slot gear (the iron
+  helm) is already equipped, so the two don't visually clash. `characterClass`
+  is now threaded from the server's `init`/`playerJoined` payloads into
+  `createCharacterMesh()` for both the local player and every `RemotePlayer`,
+  so the effect applies to everyone in the world, not just your own
+  character; a class is still chosen once at account creation and never
+  changes, so this is baked in at mesh-creation time exactly like `color`
+  already is, with no new network messages needed. Verified with a
+  standalone Node script (using the `three` package from
+  `client/node_modules`) building a real character mesh per class and
+  traversing the resulting scene graph — 42 checks: every class builds
+  without throwing, torso scale differs between classes (warrior widest,
+  rogue slimmest), warrior/paladin/rogue/mage each have the expected exact
+  count of box/cone/torus-geometry pieces, a class hood/hat is suppressed
+  (but the mage robe is not) when an iron helm is equipped, and
+  `applyEquipment()`'s existing weapon/helmet/chestplate behavior is
+  unchanged alongside the new accessories — all passed, plus `node --check`
+  on both touched files.
 - Quest NPC: a stationary quest giver, "Elder Maren" ("NPC for quests"),
   giving the existing auto-tracked quest system (`server/quests.js`) a
   physical presence in the world instead of living only in the always-open

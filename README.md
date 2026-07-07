@@ -21,7 +21,10 @@ a full game.
   squishiest/hardest hits, Warrior balanced, Mage a glass cannon), shown
   alongside your level in the HUD (see `server/classes.js`). Your class is
   locked in for that account from then on, the same way your name/password
-  are
+  are. Each class also looks visually distinct in the world: Warrior is
+  broader-framed with steel pauldrons, Paladin has a golden collar and
+  tabard, Rogue wears a dark hood, and Mage wears a pointed hat and a
+  flowing robe (see `client/src/player.js`)
 - Spell attacks: each class has one signature spell (`server/spells.js`),
   unlocked at level 3 — Warrior's Rending Strike, Paladin's Holy Smite (also
   heals you a little), Rogue's Shadow Strike, and the Mage's longer-ranged

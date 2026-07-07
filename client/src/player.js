@@ -56,19 +56,127 @@ function weaponAppearanceFor(equipment) {
   return WEAPON_APPEARANCE[equipment?.weapon] || DEFAULT_WEAPON_APPEARANCE;
 }
 
-export function createCharacterMesh(color, equipment = {}) {
+// ---- Class appearance --------------------------------------------------------
+// Purely cosmetic per-class silhouette accents (see server/classes.js for the
+// same four ids' gameplay multipliers), layered on top of the base mesh at
+// creation time only -- a class is chosen once at account creation and never
+// changes afterward (server/index.js locks it in permanently, same as name/
+// password), so unlike equipment there's no live re-apply path needed, just a
+// one-time bake exactly like `color` already gets. Kept as its own client-side
+// lookup (mirrors WEAPON_APPEARANCE above) rather than importing
+// server/classes.js, since that module only carries HP/damage multipliers,
+// not how a class should look.
+const CLASS_APPEARANCE = {
+  warrior: {
+    // Broader frame + steel pauldrons/collar -- reads as the heavy melee bruiser.
+    torsoScale: { x: 1.18, y: 1, z: 1.18 },
+    trimColor: 0x8a8f98,
+    trimMetalness: 0.75,
+    trimRoughness: 0.3,
+  },
+  paladin: {
+    // Golden collar + a tabard plate -- reads as the holy defender.
+    torsoScale: { x: 1, y: 1, z: 1 },
+    trimColor: 0xd8b23a,
+    trimMetalness: 0.6,
+    trimRoughness: 0.25,
+  },
+  rogue: {
+    // Slimmer frame + a dark hood -- reads as the stealthy striker.
+    torsoScale: { x: 0.92, y: 1, z: 0.92 },
+    trimColor: 0x2b2b33,
+    trimMetalness: 0.1,
+    trimRoughness: 0.9,
+  },
+  mage: {
+    // Pointed hat + flowing robe skirt, tinted the same arcane blue-violet as
+    // the spell-cast glow (SPELL_GLOW_COLOR above) for a consistent palette.
+    torsoScale: { x: 1, y: 1, z: 1 },
+    trimColor: 0x4a3a7a,
+    trimMetalness: 0.2,
+    trimRoughness: 0.55,
+  },
+};
+const DEFAULT_CLASS_APPEARANCE = CLASS_APPEARANCE.warrior;
+
+function classAppearanceFor(characterClass) {
+  return CLASS_APPEARANCE[characterClass] || DEFAULT_CLASS_APPEARANCE;
+}
+
+/** Adds the class-specific silhouette accents (collar trim + any
+ * class-unique pieces) to a freshly-built character mesh. Head-slot pieces
+ * (hood/hat) are skipped when real head equipment is already worn, so they
+ * don't visually clash with the iron-helm dome applyEquipment() adds. */
+function addClassAccessories(group, characterClass, equipment, appearance) {
+  const trimMaterial = () =>
+    new THREE.MeshStandardMaterial({
+      color: appearance.trimColor,
+      metalness: appearance.trimMetalness,
+      roughness: appearance.trimRoughness,
+    });
+
+  const collarTrim = new THREE.Mesh(new THREE.TorusGeometry(0.4 * appearance.torsoScale.x, 0.055, 8, 16), trimMaterial());
+  collarTrim.position.y = 1.58;
+  collarTrim.rotation.x = Math.PI / 2;
+  collarTrim.castShadow = true;
+  group.add(collarTrim);
+
+  if (characterClass === "warrior") {
+    const pauldronGeo = new THREE.BoxGeometry(0.24, 0.16, 0.24);
+    for (const side of [-1, 1]) {
+      const pauldron = new THREE.Mesh(pauldronGeo, trimMaterial());
+      pauldron.position.set(side * 0.42, 1.62, 0.05);
+      pauldron.castShadow = true;
+      group.add(pauldron);
+    }
+  }
+
+  if (characterClass === "paladin") {
+    const tabard = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.55, 0.06), trimMaterial());
+    tabard.position.set(0, 1.05, 0.42 * appearance.torsoScale.z);
+    tabard.castShadow = true;
+    group.add(tabard);
+  }
+
+  if (!equipment?.head && characterClass === "rogue") {
+    const hood = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.5, 12, 1, true), trimMaterial());
+    hood.position.y = 2.05;
+    hood.castShadow = true;
+    group.add(hood);
+  }
+
+  if (!equipment?.head && characterClass === "mage") {
+    const hat = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.6, 10), trimMaterial());
+    hat.position.y = 2.35;
+    hat.castShadow = true;
+    group.add(hat);
+  }
+
+  if (characterClass === "mage") {
+    const robe = new THREE.Mesh(new THREE.ConeGeometry(0.62, 1.05, 12, 1, true), trimMaterial());
+    robe.position.y = 0.55;
+    robe.castShadow = true;
+    group.add(robe);
+  }
+}
+
+export function createCharacterMesh(color, equipment = {}, characterClass = "warrior") {
   const group = new THREE.Group();
+  const classAppearance = classAppearanceFor(characterClass);
 
   // Torso: shortened/raised from the old single floor-to-head capsule so the
-  // new legs below have room to actually be visible and swing.
+  // new legs below have room to actually be visible and swing. Scaled per
+  // class (see CLASS_APPEARANCE) for a broader/slimmer silhouette.
   const body = new THREE.Mesh(
     new THREE.CapsuleGeometry(0.42, 0.75, 4, 8),
     new THREE.MeshStandardMaterial({ color })
   );
   body.position.y = 1.15;
+  body.scale.set(classAppearance.torsoScale.x, classAppearance.torsoScale.y, classAppearance.torsoScale.z);
   body.castShadow = true;
   group.add(body);
   group.userData.body = body; // spell-cast glow pulse (triggerSpellCast/updateSpellCast) targets this material
+  group.userData.characterClass = characterClass;
 
   const head = new THREE.Mesh(
     new THREE.SphereGeometry(0.32, 16, 16),
@@ -139,6 +247,11 @@ export function createCharacterMesh(color, equipment = {}) {
   leftArmPivot.add(leftForearm);
 
   group.add(leftArmPivot);
+
+  // Class silhouette accents (collar trim + any class-unique pieces) --
+  // added last so head-gear conflict checks above see the final equipment
+  // state, and so they layer visually on top of the base body/head/limbs.
+  addClassAccessories(group, characterClass, equipment, classAppearance);
 
   // Per-mesh attack animation state, driven by triggerAttack()/updateAttack().
   group.userData.armPivot = armPivot;
@@ -350,7 +463,8 @@ export class RemotePlayer {
     this.hp = data.hp ?? 100;
     this.maxHp = data.maxHp ?? 100;
     this.equipment = data.equipment || {};
-    this.mesh = createCharacterMesh(data.color, this.equipment);
+    this.characterClass = data.characterClass || "warrior";
+    this.mesh = createCharacterMesh(data.color, this.equipment, this.characterClass);
     this.mesh.position.set(data.x, data.y, data.z);
     this.mesh.rotation.y = data.rotY;
     this.target = { x: data.x, y: data.y, z: data.z, rotY: data.rotY };

@@ -639,7 +639,7 @@ function startGame(character) {
         if (questBoardHeaderEl) questBoardHeaderEl.textContent = questNpcInfo.name;
       }
 
-      local.mesh = createCharacterMesh(data.self.color, local.equipment);
+      local.mesh = createCharacterMesh(data.self.color, local.equipment, local.characterClass);
       local.mesh.position.set(data.self.x, data.self.y, data.self.z);
       scene.add(local.mesh);
       playerNames.set(local.id, local.name);
