@@ -9,6 +9,7 @@ import { resolveLogin } from "./accountStore.js";
 import { QUEST_DEFS, initQuestState, advanceKillQuests, advanceCollectQuests } from "./quests.js";
 import { CHARACTER_CLASSES, DEFAULT_CLASS_ID, sanitizeClassId, classMaxHp, classDamage } from "./classes.js";
 import { spellForClass, isSpellUnlocked, isSpellOffCooldown, computeSpellDamage } from "./spells.js";
+import { STORE_CATALOG, STORE_NPC_NAME, STORE_NPC_POSITION, validateStorePurchase } from "./store.js";
 import { PARTY_MAX_SIZE, createParty, isPartyFull, isPartyMember, isPartyLeader, addPartyMember, removePartyMember } from "./parties.js";
 import { computeVoicePairs, diffVoicePairs, splitPairKey } from "./voiceProximity.js";
 import {
@@ -92,6 +93,23 @@ function addItemToInventory(player, itemId, qty = 1) {
   if (player.inventory.length >= MAX_INVENTORY_SLOTS) return false;
 
   player.inventory.push({ itemId, name: def.name, icon: def.icon, qty, slot: def.slot ?? null });
+  return true;
+}
+
+/** Removes up to `qty` of `itemId` from a player's inventory, deleting the
+ * stack entirely once it hits zero. Returns false (removing nothing) if the
+ * player doesn't currently hold at least `qty` of it -- callers (e.g. the
+ * "buyStoreItem" handler below) should have already confirmed affordability
+ * via store.js's goldBalance()/validateStorePurchase() before relying on
+ * this to actually succeed. */
+function removeItemFromInventory(player, itemId, qty = 1) {
+  const idx = player.inventory.findIndex((slot) => slot.itemId === itemId);
+  if (idx === -1) return false;
+  const slot = player.inventory[idx];
+  if (slot.qty < qty) return false;
+
+  slot.qty -= qty;
+  if (slot.qty <= 0) player.inventory.splice(idx, 1);
   return true;
 }
 
@@ -670,6 +688,7 @@ function playerSaveRecord(player) {
     inventory: player.inventory,
     equipment: player.equipment,
     quests: player.quests,
+    ownedSpellbooks: player.ownedSpellbooks,
     x: player.x,
     y: player.y,
     z: player.z,
@@ -807,6 +826,14 @@ io.on("connection", (socket) => {
     // QUEST_DEFS id — overwritten just below once `saved` is known, so a
     // returning player's actual progress (not a blank slate) is used.
     quests: initQuestState(null),
+    // Store NPC (server/store.js) -- which class spellbooks this account has
+    // ever bought, keyed by classId ("warrior" etc). A player can only ever
+    // buy their own class's spellbook, so in practice this holds at most one
+    // key, but it's kept as a map (not a single bool) so a class switch in a
+    // future roadmap item wouldn't silently re-grant an already-paid-for
+    // unlock. Owning your class's spellbook here lets castSpell's handler
+    // below bypass spells.js's normal minLevel gate for that spell entirely.
+    ownedSpellbooks: {},
     // Proximity voice chat (see "Proximity voice chat" above) -- purely a UI
     // hint broadcast to everyone (like an equipment change) so a nearby
     // player's nameplate can show a mic icon; never persisted, never
@@ -836,6 +863,8 @@ io.on("connection", (socket) => {
     // the current QUEST_DEFS, so a quest added after this player last saved
     // still shows up (at 0 progress) instead of being missing entirely.
     player.quests = initQuestState(saved.quests);
+    player.ownedSpellbooks =
+      saved.ownedSpellbooks && typeof saved.ownedSpellbooks === "object" ? saved.ownedSpellbooks : player.ownedSpellbooks;
     console.log(`[restore] ${player.name} restored (level ${player.level}, ${player.inventory.length} item stack(s))`);
   } else {
     // First time we've seen this name — starter kit so the inventory panel
@@ -867,6 +896,12 @@ io.on("connection", (socket) => {
     // player. player.quests (part of `self` above) carries this player's
     // actual per-quest progress against them.
     questDefs: QUEST_DEFS,
+    // Store NPC (server/store.js) -- static catalog + the merchant's world
+    // position, sent once here the same way questDefs is (never changes per
+    // player; player.ownedSpellbooks, part of `self` above, carries this
+    // player's own purchase state against it).
+    storeCatalog: STORE_CATALOG,
+    storeNpc: { name: STORE_NPC_NAME, x: STORE_NPC_POSITION.x, z: STORE_NPC_POSITION.z },
   });
 
   // Tell everyone else a new player arrived.
@@ -988,7 +1023,13 @@ io.on("connection", (socket) => {
     if (!spell) return; // shouldn't happen -- every class has exactly one spell
 
     const now = Date.now();
-    if (!isSpellUnlocked(spell, p.level)) {
+    // A class's spellbook, bought from the store NPC (server/store.js), lets
+    // a player cast their spell before spells.js's normal minLevel gate --
+    // isSpellUnlocked() alone isn't enough here anymore, unlike every other
+    // read of it (e.g. the client's own local pre-check, which doesn't know
+    // about spellbooks and just relies on the server re-validating).
+    const spellbookUnlocked = !!p.ownedSpellbooks[p.characterClass];
+    if (!isSpellUnlocked(spell, p.level) && !spellbookUnlocked) {
       socket.emit("spellRejected", { reason: `${spell.name} unlocks at level ${spell.minLevel}.` });
       return;
     }
@@ -1065,6 +1106,48 @@ io.on("connection", (socket) => {
 
     p.equipment[slot] = null;
     io.emit("playerEquipmentChanged", { id: p.id, equipment: p.equipment });
+  });
+
+  // ---- Store NPC (buy goods/spellbooks for gold) --------------------------
+  // See server/store.js for the catalog plus the pure range/afford/
+  // eligibility check (validateStorePurchase) -- this handler only performs
+  // the actual mutation (remove gold, then either grant the item or flip the
+  // per-class spellbook-owned flag) once that check passes, the same
+  // "validate first, mutate only on success" posture equipItem/unequipItem
+  // above already follow.
+  socket.on("buyStoreItem", (itemId) => {
+    const p = players.get(socket.id);
+    if (!p || !p.alive || typeof itemId !== "string") return;
+
+    const result = validateStorePurchase({
+      itemId,
+      x: p.x,
+      z: p.z,
+      inventory: p.inventory,
+      characterClass: p.characterClass,
+      ownedSpellbooks: p.ownedSpellbooks,
+    });
+    if (!result.ok) {
+      socket.emit("storePurchaseResult", { ok: false, itemId, reason: result.reason });
+      return;
+    }
+
+    const { entry } = result;
+    removeItemFromInventory(p, "gold-coin", entry.cost);
+
+    if (entry.spellClassId) {
+      // A spellbook doesn't occupy an inventory slot -- it's consumed
+      // instantly into a permanent per-class unlock flag (see castSpell's
+      // spellbookUnlocked check above), same "instant effect, no item
+      // object" treatment a future consumable-on-use item might get.
+      p.ownedSpellbooks[entry.spellClassId] = true;
+      socket.emit("storePurchaseResult", { ok: true, itemId, spellClassId: entry.spellClassId });
+    } else {
+      addItemToInventory(p, entry.itemId, 1);
+      socket.emit("storePurchaseResult", { ok: true, itemId });
+    }
+
+    socket.emit("inventoryUpdated", { inventory: p.inventory });
   });
 
   // ---- Parties (grouping) -------------------------------------------------

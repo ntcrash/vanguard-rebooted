@@ -10,6 +10,38 @@ tagged there.
 
 ### Added
 
+- Store NPC: a stationary "Wandering Merchant" ("NPC for store, to buy items
+  including spells" — the roadmap explicitly called out spells, so this ties
+  directly into the spell-attacks/character-classes work above) players can
+  walk up to and shop with, spending `gold-coin` as currency. New
+  `server/store.js` module (mirrors `quests.js`/`classes.js`/`spells.js`'s
+  "pure logic in its own file" pattern) holds the `STORE_CATALOG` (health
+  draughts, moonpetals, the three equippable gear items, and one spellbook
+  per class) plus `isNearStore()`/`goldBalance()`/`validateStorePurchase()`
+  — all pure and unit-tested standalone. Buying your own class's spellbook is
+  a one-time purchase (rejected if already owned, or if it's another class's
+  book) that instantly unlocks that class's spell, bypassing `spells.js`'s
+  normal level-3 gate entirely (tracked per-player as a new persisted
+  `ownedSpellbooks` map, checked by `castSpell`'s handler alongside the
+  existing level check). `server/index.js` gained a new `removeItemFromInventory()`
+  helper (mirroring `addItemToInventory()`) and a `buyStoreItem` socket
+  handler that validates then mutates gold/inventory/the spellbook flag,
+  answering with a `storePurchaseResult` event. Client: new
+  `client/src/storeNpc.js` renders a stationary robed merchant + goods cart
+  near the world origin; `B` (or a new 🛒 touch button) opens a store panel
+  (new `#store-panel` in `index.html`) listing the catalog with live
+  afford/ownership/class-eligibility state, closing automatically if you walk
+  away; the spell HUD's "locked" hint and the local pre-cast gate both now
+  recognize an early-unlocked spellbook, not just level. Verified with a
+  standalone Node script against `server/store.js` (25 checks: catalog
+  shape, near/far range including the exact-boundary case, gold-balance
+  edge cases, and every `validateStorePurchase` rejection/success path
+  including cost-boundary and per-class spellbook symmetry) and a full
+  integration test booting the real server + a real `socket.io-client`
+  connection (17 checks covering unknown items, wrong-class spellbooks,
+  too-far rejection, a real purchase's exact gold/inventory delta, the
+  already-owned rejection, and a level-1 spell cast no longer being
+  rejected for level once the spellbook is owned) — all passed.
 - Spell attacks: each character class now has one signature spell, unlocked
   at level 3 and gated by its own cooldown independent of the plain melee
   attack — Warrior's Rending Strike, Paladin's Holy Smite (which also heals

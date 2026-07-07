@@ -101,6 +101,11 @@ a full game.
 - Esc game menu: `Esc` (or the ☰ touch button) opens a Resume / Save Game /
   Exit to Login menu. "Save Game" persists your progress immediately and
   confirms it; "Exit to Login" disconnects and returns you to the login screen
+- Store NPC: a "Wandering Merchant" you can shop with (`B`, or the 🛒 touch
+  button, while standing near them) — spend gold coins you've collected on
+  health draughts, moonpetals, gear, or a one-time class spellbook that
+  instantly unlocks your class's spell early, bypassing the normal level-3
+  requirement (see `server/store.js`)
 
 Accounts are stored alongside player saves in `server/data/accounts.json`
 (gitignored, password hashes only — never plaintext).
@@ -167,12 +172,13 @@ Deploying this somewhere other players can reach it? See
 | `L`                     | Toggle quest log                 |
 | `P`                     | Toggle party panel                |
 | `V`                     | Toggle mic (proximity voice chat) |
+| `B`                     | Open the merchant's store (must be standing near them) |
 | `Enter`                 | Focus chat box / send message    |
 | `Esc`                   | Clear & unfocus chat box (while chatting); otherwise open the game menu |
 
 On a touchscreen, a virtual joystick (bottom-left) replaces WASD, and a
-Sprint/Attack/Spell/Inventory/Quest Log/Party/Mic/Menu button stack
-(bottom-right) replaces `Shift`/click-or-`F`/`Q`/`I`/`L`/`P`/`V`/`Esc`.
+Sprint/Attack/Spell/Inventory/Quest Log/Party/Mic/Store/Menu button stack
+(bottom-right) replaces `Shift`/click-or-`F`/`Q`/`I`/`L`/`P`/`V`/`B`/`Esc`.
 Dragging a finger anywhere else on the scene orbits the camera, same as a
 mouse drag.
 

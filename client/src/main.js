@@ -12,6 +12,7 @@ import {
 } from "./player.js";
 import { Mob } from "./mob.js";
 import { Pickup } from "./pickup.js";
+import { StoreNpc } from "./storeNpc.js";
 import {
   initInput,
   keys,
@@ -23,6 +24,7 @@ import {
   partyToggle,
   micToggle,
   menuToggle,
+  storeToggle,
 } from "./input.js";
 import { connectToServer } from "./network.js";
 import { initChat } from "./chat.js";
@@ -63,6 +65,12 @@ const gameMenuSaveBtnEl = document.getElementById("game-menu-save-btn");
 const gameMenuSaveStatusEl = document.getElementById("game-menu-save-status");
 const gameMenuExitBtnEl = document.getElementById("game-menu-exit-btn");
 let saveStatusClearTimer = null;
+const storePanelEl = document.getElementById("store-panel");
+const storeHeaderEl = document.getElementById("store-header");
+const storeGoldEl = document.getElementById("store-gold");
+const storeListEl = document.getElementById("store-list");
+const STORE_INTERACT_RANGE = 4; // must match server/store.js's STORE_INTERACT_RANGE
+const STORE_NPC_LABEL_ID = "store-npc"; // synthetic id so the NPC shares labelEls/updateLabels' per-id loop
 
 const ATTACK_COOLDOWN = 0.6; // seconds between local attacks
 const SPRINT_MULTIPLIER = 1.8; // hold Shift (input.js's keys.sprint) to move+animate this much faster
@@ -126,6 +134,7 @@ const local = {
   quests: {}, // { [questId]: { progress, completed } }, server-authoritative
   partyId: null, // server/parties.js party id, or null if not in a party
   partyRoster: [], // [{ id, name, isLeader }], server-authoritative (see "partyState")
+  ownedSpellbooks: {}, // { [classId]: true }, server-authoritative (server/store.js) -- lets the spell HUD/cast gate bypass minLevel
 };
 
 // Static quest definitions ({ id, name, description, count, ... }), sent
@@ -136,13 +145,17 @@ let questDefs = {};
 const remotePlayers = new Map(); // id -> RemotePlayer
 const mobs = new Map(); // id -> Mob
 const pickups = new Map(); // id -> Pickup (world item pickups)
-const labelEls = new Map(); // id -> HTMLDivElement (name tag), shared by players + mobs
+const npcs = new Map(); // synthetic id -> StoreNpc (currently at most one, the merchant)
+const labelEls = new Map(); // id -> HTMLDivElement (name tag), shared by players + mobs + npcs
 const healthBarEls = new Map(); // id -> { outer, fill } HTMLDivElements, shared by players + mobs
 const damageNumbers = new DamageNumbers(labelsEl);
 let inventoryOpen = false;
 let questLogOpen = false;
 let partyOpen = false;
 let menuOpen = false;
+let storeOpen = false;
+let storeCatalog = []; // server/store.js's STORE_CATALOG, sent once on "init"
+let storeNpcInfo = null; // { name, x, z }, sent once on "init"
 // The single incoming party invite (if any) this client is currently showing
 // an Accept/Decline popup for -- mirrors pendingPartyInvites' "at most one
 // outstanding invite per player" rule on the server (server/index.js).
@@ -288,6 +301,70 @@ function closeGameMenu() {
   if (gameMenuPanelEl) gameMenuPanelEl.classList.add("hidden");
 }
 
+/** Whether the local player is currently close enough to the store NPC to
+ * shop -- mirrors server/store.js's isNearStore() so the panel doesn't claim
+ * to be open against an NPC too far away to actually buy from (the server
+ * re-validates range on every "buyStoreItem" regardless, same posture as
+ * every other client-side pre-check in this file). */
+function isNearStoreNpc() {
+  if (!local.mesh || !storeNpcInfo) return false;
+  const dist = Math.hypot(local.mesh.position.x - storeNpcInfo.x, local.mesh.position.z - storeNpcInfo.z);
+  return dist <= STORE_INTERACT_RANGE;
+}
+
+/** Rebuilds the store panel's item list from storeCatalog (static) + the
+ * player's current gold/class/ownedSpellbooks (server-authoritative) --
+ * mirrors renderInventory()'s always-rebuild-from-scratch pattern. A
+ * spellbook tile shows "Owned"/"Wrong class" instead of "Buy" once it no
+ * longer makes sense to purchase, so the disabled reason is visible rather
+ * than just a greyed-out button. */
+function renderStorePanel() {
+  if (!storeListEl) return;
+  storeListEl.innerHTML = "";
+
+  const gold = local.inventory.find((slot) => slot.itemId === "gold-coin")?.qty ?? 0;
+  if (storeGoldEl) storeGoldEl.textContent = `Your gold: ${gold}`;
+
+  for (const entry of storeCatalog) {
+    const owned = !!(entry.spellClassId && local.ownedSpellbooks[entry.spellClassId]);
+    const wrongClass = !!(entry.spellClassId && entry.spellClassId !== local.characterClass);
+    const canAfford = gold >= entry.cost;
+
+    const div = document.createElement("div");
+    div.className = "store-entry" + (owned ? " owned" : "");
+    div.innerHTML =
+      `<span class="store-item-icon">${entry.icon}</span>` +
+      `<span class="store-item-name">${entry.name}</span>` +
+      `<span class="store-item-cost">${entry.cost}g</span>`;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = owned ? "Owned" : wrongClass ? "Wrong class" : canAfford ? "Buy" : "Need gold";
+    btn.disabled = owned || wrongClass || !canAfford;
+    btn.addEventListener("click", () => net?.buyStoreItem(entry.itemId));
+    div.appendChild(btn);
+
+    storeListEl.appendChild(div);
+  }
+}
+
+function updateStoreToggle() {
+  if (!storeToggle.requested) return;
+  storeToggle.requested = false;
+
+  if (!storeOpen) {
+    if (!isNearStoreNpc()) {
+      chat.addSystemLine(`You need to be near the ${storeNpcInfo?.name || "merchant"} to shop.`);
+      return;
+    }
+    storeOpen = true;
+    renderStorePanel();
+  } else {
+    storeOpen = false;
+  }
+  if (storePanelEl) storePanelEl.classList.toggle("hidden", !storeOpen);
+}
+
 /** Shows the Accept/Decline popup for an incoming party invite, replacing
  * any previous one this client hadn't responded to yet -- mirrors the
  * server's own "at most one outstanding invite" rule. */
@@ -357,12 +434,20 @@ function updateXpUI() {
  * that, and drives the cooldown bar the same way updateLocalAttack drives
  * `cooldownFillEl`. A player with no spell yet (local.spell still null,
  * briefly true before the first "init" arrives) leaves the row blank. */
+/** Whether the local player can cast their class spell right now regardless
+ * of level -- either they've actually reached spell.minLevel, or they bought
+ * their class's spellbook from the store NPC (server/store.js), which lets
+ * server/index.js's castSpell handler bypass the level gate entirely. */
+function hasSpellUnlock() {
+  return !!local.spell && (local.level >= local.spell.minLevel || !!local.ownedSpellbooks[local.characterClass]);
+}
+
 function updateSpellUI() {
   if (spellInfoEl) {
     if (!local.spell) {
       spellInfoEl.textContent = "";
-    } else if (local.level < local.spell.minLevel) {
-      spellInfoEl.textContent = `\u{1F512} ${local.spell.name} unlocks at level ${local.spell.minLevel}`;
+    } else if (!hasSpellUnlock()) {
+      spellInfoEl.textContent = `\u{1F512} ${local.spell.name} unlocks at level ${local.spell.minLevel} (or buy the spellbook)`;
     } else {
       spellInfoEl.textContent = `${local.spell.icon} ${local.spell.name} (Q)`;
     }
@@ -454,6 +539,7 @@ function startGame(character) {
       local.spell = data.self.spell || null;
       local.spellCooldownRemaining = 0;
       local.quests = data.self.quests || {};
+      local.ownedSpellbooks = data.self.ownedSpellbooks || {};
       // A fresh connection never starts already in a party server-side (see
       // server/index.js's connection handler) -- reset any stale roster from
       // a prior connection so a reconnect doesn't show a party we've already
@@ -461,10 +547,23 @@ function startGame(character) {
       local.partyId = null;
       local.partyRoster = [];
       questDefs = data.questDefs || {};
+      storeCatalog = data.storeCatalog || [];
+      storeNpcInfo = data.storeNpc || null;
       renderInventory();
       renderQuestLog();
       renderPartyPanel();
       updateXpUI();
+
+      // Store NPC (server/store.js) -- a single static merchant, spawned
+      // once here the same way mobs/pickups are below. Uses a synthetic id
+      // (STORE_NPC_LABEL_ID) so it shares labelEls/updateLabels' existing
+      // per-id nameplate loop without needing its own separate rendering path.
+      if (storeNpcInfo && !npcs.has(STORE_NPC_LABEL_ID)) {
+        const npc = new StoreNpc(scene, storeNpcInfo, storeNpcInfo.name);
+        npcs.set(STORE_NPC_LABEL_ID, npc);
+        labelEls.set(STORE_NPC_LABEL_ID, makeLabel(storeNpcInfo.name, "npc"));
+        if (storeHeaderEl) storeHeaderEl.textContent = storeNpcInfo.name;
+      }
 
       local.mesh = createCharacterMesh(data.self.color, local.equipment);
       local.mesh.position.set(data.self.x, data.self.y, data.self.z);
@@ -713,6 +812,11 @@ function startGame(character) {
     onInventoryUpdated: (data) => {
       local.inventory = data.inventory || [];
       renderInventory();
+      // A store purchase (server/store.js) also fires "inventoryUpdated" (new
+      // item, or gold spent) -- keep the open store panel's gold/afford state
+      // in sync the same way it already re-renders on open/every purchase
+      // result below, rather than only refreshing on the next manual toggle.
+      if (storeOpen) renderStorePanel();
     },
 
     onPlayerEquipmentChanged: (data) => {
@@ -825,6 +929,30 @@ function startGame(character) {
       saveStatusClearTimer = setTimeout(() => {
         gameMenuSaveStatusEl.textContent = "";
       }, 2000);
+    },
+
+    // Store NPC (server/store.js): answers this client's own "buyStoreItem"
+    // request. A rejection (too far, can't afford it, wrong class's
+    // spellbook, already owned) surfaces as a chat system line the same
+    // lightweight way "spellRejected"/"partyNotice" do. A successful
+    // spellbook purchase also refreshes the spell HUD immediately, since
+    // hasSpellUnlock() now depends on local.ownedSpellbooks -- otherwise the
+    // "locked until level X" text would linger until the next level-up.
+    onStorePurchaseResult: (data) => {
+      if (!data) return;
+      if (!data.ok) {
+        chat.addSystemLine(data.reason || "Purchase failed.");
+        return;
+      }
+      if (data.spellClassId) {
+        local.ownedSpellbooks[data.spellClassId] = true;
+        chat.addSystemLine(`You bought the ${classDisplayName(data.spellClassId)}'s Spellbook — your spell is unlocked!`);
+        updateSpellUI();
+      } else {
+        const bought = storeCatalog.find((entry) => entry.itemId === data.itemId);
+        chat.addSystemLine(`Bought ${bought?.name || data.itemId}.`);
+      }
+      if (storeOpen) renderStorePanel();
     },
   }, character);
 }
@@ -1135,13 +1263,7 @@ function updateLocalSpellCast(dt) {
 
   if (spellCastInput.requested) {
     spellCastInput.requested = false;
-    if (
-      local.spell &&
-      local.mesh &&
-      local.alive &&
-      local.level >= local.spell.minLevel &&
-      local.spellCooldownRemaining <= 0
-    ) {
+    if (local.spell && local.mesh && local.alive && hasSpellUnlock() && local.spellCooldownRemaining <= 0) {
       triggerSpellCast(local.mesh);
       local.spellCooldownRemaining = local.spell.cooldownMs / 1000;
       net?.sendSpellCast(findSpellTargetMobId());
@@ -1189,7 +1311,7 @@ function updateLabels() {
       worldPos = _headPos.copy(local.mesh.position);
       worldPos.y += 2.3;
     } else {
-      const rp = remotePlayers.get(id) || mobs.get(id);
+      const rp = remotePlayers.get(id) || mobs.get(id) || npcs.get(id);
       if (!rp) continue;
       worldPos = rp.headWorldPosition(_headPos);
     }
@@ -1222,6 +1344,15 @@ function animate() {
   updatePartyToggle();
   updateMicToggle();
   updateMenuToggle();
+  updateStoreToggle();
+  // Walking away from the merchant while the panel is open auto-closes it
+  // (silently -- the chat hint above is only for a *failed open attempt*, not
+  // for every step taken afterward) rather than leaving a panel open the
+  // server would reject any purchase against.
+  if (storeOpen && !isNearStoreNpc()) {
+    storeOpen = false;
+    if (storePanelEl) storePanelEl.classList.add("hidden");
+  }
   updateZoneLabel();
   if (partyOpen) renderPartyPanel(); // keeps roster hp bars live, see renderPartyPanel()'s comment
 
@@ -1240,6 +1371,7 @@ function animate() {
   for (const rp of remotePlayers.values()) rp.update(dt);
   for (const mob of mobs.values()) mob.update(dt);
   for (const pickup of pickups.values()) pickup.update(dt);
+  for (const npc of npcs.values()) npc.update(dt);
 
   maybeSendMove(performance.now());
   updateLabels();
