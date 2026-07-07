@@ -106,6 +106,12 @@ a full game.
   health draughts, moonpetals, gear, or a one-time class spellbook that
   instantly unlocks your class's spell early, bypassing the normal level-3
   requirement (see `server/store.js`)
+- Quest NPC: a quest giver, "Elder Maren," you can talk to (`N`, or the 📋
+  touch button, while standing near them) — opens a Quest Board panel
+  listing the same quest descriptions and progress as the `L` quest log.
+  Quests still auto-track and auto-grant their reward on kill/collect
+  regardless of whether you've talked to her; she's a physical presence for
+  the existing quest system, not a new requirement (see `server/questNpc.js`)
 
 Accounts are stored alongside player saves in `server/data/accounts.json`
 (gitignored, password hashes only — never plaintext).
@@ -173,14 +179,15 @@ Deploying this somewhere other players can reach it? See
 | `P`                     | Toggle party panel                |
 | `V`                     | Toggle mic (proximity voice chat) |
 | `B`                     | Open the merchant's store (must be standing near them) |
+| `N`                     | Open the quest board (must be standing near Elder Maren) |
 | `Enter`                 | Focus chat box / send message    |
 | `Esc`                   | Clear & unfocus chat box (while chatting); otherwise open the game menu |
 
 On a touchscreen, a virtual joystick (bottom-left) replaces WASD, and a
-Sprint/Attack/Spell/Inventory/Quest Log/Party/Mic/Store/Menu button stack
-(bottom-right) replaces `Shift`/click-or-`F`/`Q`/`I`/`L`/`P`/`V`/`B`/`Esc`.
-Dragging a finger anywhere else on the scene orbits the camera, same as a
-mouse drag.
+Sprint/Attack/Spell/Inventory/Quest Log/Party/Mic/Store/Quest Board/Menu
+button stack (bottom-right) replaces
+`Shift`/click-or-`F`/`Q`/`I`/`L`/`P`/`V`/`B`/`N`/`Esc`. Dragging a finger
+anywhere else on the scene orbits the camera, same as a mouse drag.
 
 ## Development notes
 

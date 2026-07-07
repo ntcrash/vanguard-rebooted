@@ -10,6 +10,7 @@ import { QUEST_DEFS, initQuestState, advanceKillQuests, advanceCollectQuests } f
 import { CHARACTER_CLASSES, DEFAULT_CLASS_ID, sanitizeClassId, classMaxHp, classDamage } from "./classes.js";
 import { spellForClass, isSpellUnlocked, isSpellOffCooldown, computeSpellDamage } from "./spells.js";
 import { STORE_CATALOG, STORE_NPC_NAME, STORE_NPC_POSITION, validateStorePurchase } from "./store.js";
+import { QUEST_NPC_NAME, QUEST_NPC_POSITION } from "./questNpc.js";
 import { PARTY_MAX_SIZE, createParty, isPartyFull, isPartyMember, isPartyLeader, addPartyMember, removePartyMember } from "./parties.js";
 import { computeVoicePairs, diffVoicePairs, splitPairKey } from "./voiceProximity.js";
 import {
@@ -902,6 +903,12 @@ io.on("connection", (socket) => {
     // player's own purchase state against it).
     storeCatalog: STORE_CATALOG,
     storeNpc: { name: STORE_NPC_NAME, x: STORE_NPC_POSITION.x, z: STORE_NPC_POSITION.z },
+    // Quest NPC (server/questNpc.js) -- just a name + world position, sent
+    // once here the same way storeNpc is. No per-player state of its own to
+    // carry (see questNpc.js's module comment: quests still auto-track/
+    // auto-grant regardless of this NPC), so unlike storeNpc there's no
+    // catalog/ownership data alongside it.
+    questNpc: { name: QUEST_NPC_NAME, x: QUEST_NPC_POSITION.x, z: QUEST_NPC_POSITION.z },
   });
 
   // Tell everyone else a new player arrived.
