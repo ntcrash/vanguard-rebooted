@@ -10,6 +10,37 @@ tagged there.
 
 ### Added
 
+- Quest NPC: a stationary quest giver, "Elder Maren" ("NPC for quests"),
+  giving the existing auto-tracked quest system (`server/quests.js`) a
+  physical presence in the world instead of living only in the always-open
+  "L" quest log. New `server/questNpc.js` module (mirrors `store.js`'s
+  "pure logic in its own file" pattern) holds `QUEST_NPC_NAME`/
+  `QUEST_NPC_POSITION`/`QUEST_NPC_INTERACT_RANGE` plus a pure
+  `isNearQuestNpc()` proximity check; the NPC's name/position is sent once
+  in the `init` payload, the same way the store NPC's is. Existing quests
+  still auto-advance on kill/collect and auto-grant their reward the
+  instant they complete, regardless of this NPC — it's a lore/UX anchor for
+  quests that already exist, not a gate on them (a real accept/turn-in flow
+  would be a bigger redesign than this one roadmap item called for). Client:
+  new `client/src/questNpc.js` renders a stationary robed elder with a
+  staff and a wooden quest-board sign, in a cooler blue/green palette
+  distinct from the merchant's warm gold/brown, placed near the world
+  origin clear of the store NPC and every pickup/mob spawn point; `N` (or a
+  new 📋 touch button) opens a new top-center "Quest Board" panel
+  (`#quest-board-panel` in `index.html`) listing the same quest
+  descriptions/progress the "L" quest log already shows, closing
+  automatically if you walk away — `main.js`'s old `renderQuestLog()` was
+  refactored into a shared `renderQuestList(containerEl)` so both panels
+  render from one code path instead of duplicating the list-building logic.
+  Verified with a standalone Node script against `server/questNpc.js` (12
+  checks: exact-boundary range in both axes, diagonal/hypot distance rather
+  than a box check, and a geometric sanity check that the NPC's position is
+  clear of the store NPC's own interact range and every `PICKUP_SPAWNS`/
+  `MOB_SPAWNS` entry in `server/index.js`) plus the usual `node --check` on
+  every touched file, an HTML `<div>` tag-balance check, a CSS brace-balance
+  check, and a cross-check that every new DOM id referenced from
+  `main.js`/`input.js` actually exists in `index.html`.
+
 - Store NPC: a stationary "Wandering Merchant" ("NPC for store, to buy items
   including spells" — the roadmap explicitly called out spells, so this ties
   directly into the spell-attacks/character-classes work above) players can

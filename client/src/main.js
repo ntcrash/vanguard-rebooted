@@ -13,6 +13,7 @@ import {
 import { Mob } from "./mob.js";
 import { Pickup } from "./pickup.js";
 import { StoreNpc } from "./storeNpc.js";
+import { QuestNpc } from "./questNpc.js";
 import {
   initInput,
   keys,
@@ -25,6 +26,7 @@ import {
   micToggle,
   menuToggle,
   storeToggle,
+  questNpcToggle,
 } from "./input.js";
 import { connectToServer } from "./network.js";
 import { initChat } from "./chat.js";
@@ -71,6 +73,11 @@ const storeGoldEl = document.getElementById("store-gold");
 const storeListEl = document.getElementById("store-list");
 const STORE_INTERACT_RANGE = 4; // must match server/store.js's STORE_INTERACT_RANGE
 const STORE_NPC_LABEL_ID = "store-npc"; // synthetic id so the NPC shares labelEls/updateLabels' per-id loop
+const questBoardPanelEl = document.getElementById("quest-board-panel");
+const questBoardHeaderEl = document.getElementById("quest-board-header");
+const questBoardListEl = document.getElementById("quest-board-list");
+const QUEST_NPC_INTERACT_RANGE = 4; // must match server/questNpc.js's QUEST_NPC_INTERACT_RANGE
+const QUEST_NPC_LABEL_ID = "quest-npc"; // synthetic id, same treatment as STORE_NPC_LABEL_ID
 
 const ATTACK_COOLDOWN = 0.6; // seconds between local attacks
 const SPRINT_MULTIPLIER = 1.8; // hold Shift (input.js's keys.sprint) to move+animate this much faster
@@ -145,7 +152,7 @@ let questDefs = {};
 const remotePlayers = new Map(); // id -> RemotePlayer
 const mobs = new Map(); // id -> Mob
 const pickups = new Map(); // id -> Pickup (world item pickups)
-const npcs = new Map(); // synthetic id -> StoreNpc (currently at most one, the merchant)
+const npcs = new Map(); // synthetic id -> StoreNpc | QuestNpc (currently the merchant + Elder Maren)
 const labelEls = new Map(); // id -> HTMLDivElement (name tag), shared by players + mobs + npcs
 const healthBarEls = new Map(); // id -> { outer, fill } HTMLDivElements, shared by players + mobs
 const damageNumbers = new DamageNumbers(labelsEl);
@@ -156,6 +163,8 @@ let menuOpen = false;
 let storeOpen = false;
 let storeCatalog = []; // server/store.js's STORE_CATALOG, sent once on "init"
 let storeNpcInfo = null; // { name, x, z }, sent once on "init"
+let questBoardOpen = false;
+let questNpcInfo = null; // { name, x, z }, sent once on "init" (server/questNpc.js)
 // The single incoming party invite (if any) this client is currently showing
 // an Accept/Decline popup for -- mirrors pendingPartyInvites' "at most one
 // outstanding invite per player" rule on the server (server/index.js).
@@ -205,12 +214,17 @@ function updateInventoryToggle() {
   if (inventoryPanelEl) inventoryPanelEl.classList.toggle("hidden", !inventoryOpen);
 }
 
-/** Rebuilds the quest log panel from questDefs (static) + local.quests
- * (this player's live progress against each one), in questDefs' insertion
- * order so the list doesn't reshuffle as quests complete. */
-function renderQuestLog() {
-  if (!questListEl) return;
-  questListEl.innerHTML = "";
+/** Rebuilds a quest list panel (either the always-available "L" quest log,
+ * or the quest-NPC's quest board -- see renderQuestLog()/renderQuestBoard()
+ * below, which just pick the target container) from questDefs (static) +
+ * local.quests (this player's live progress against each one), in
+ * questDefs' insertion order so the list doesn't reshuffle as quests
+ * complete. Both panels show identical content -- the quest board's only
+ * difference is that it's gated behind walking up to Elder Maren
+ * (server/questNpc.js) rather than always available. */
+function renderQuestList(containerEl) {
+  if (!containerEl) return;
+  containerEl.innerHTML = "";
   for (const [id, def] of Object.entries(questDefs)) {
     const q = local.quests[id] || { progress: 0, completed: false };
     const div = document.createElement("div");
@@ -219,8 +233,28 @@ function renderQuestLog() {
       `<div class="quest-name">${def.name}${q.completed ? " ✓" : ""}</div>` +
       `<div class="quest-desc">${def.description}</div>` +
       `<div class="quest-progress">${Math.min(q.progress, def.count)}/${def.count}</div>`;
-    questListEl.appendChild(div);
+    containerEl.appendChild(div);
   }
+}
+
+function renderQuestLog() {
+  renderQuestList(questListEl);
+}
+
+function renderQuestBoard() {
+  renderQuestList(questBoardListEl);
+}
+
+/** Re-renders whichever quest panel(s) are relevant right now -- the quest
+ * log always (it has no visibility gate of its own; renderQuestList() is
+ * cheap even while hidden, same posture as renderPartyPanel()), and the
+ * quest board only while it's actually open, mirroring how the store panel
+ * only re-renders on demand while storeOpen. Called from every place that
+ * used to call renderQuestLog() alone, so the board doesn't show stale
+ * progress if a player completes a quest step while it's open. */
+function refreshQuestPanels() {
+  renderQuestLog();
+  if (questBoardOpen) renderQuestBoard();
 }
 
 function updateQuestLogToggle() {
@@ -228,6 +262,36 @@ function updateQuestLogToggle() {
   questLogToggle.requested = false;
   questLogOpen = !questLogOpen;
   if (questPanelEl) questPanelEl.classList.toggle("hidden", !questLogOpen);
+}
+
+/** Whether the local player is currently close enough to the quest NPC to
+ * check the quest board -- mirrors isNearStoreNpc()/server/questNpc.js's
+ * isNearQuestNpc(). Purely a client-side UX gate (unlike the store, there's
+ * no server-authoritative action here to re-validate against). */
+function isNearQuestNpc() {
+  if (!local.mesh || !questNpcInfo) return false;
+  const dist = Math.hypot(local.mesh.position.x - questNpcInfo.x, local.mesh.position.z - questNpcInfo.z);
+  return dist <= QUEST_NPC_INTERACT_RANGE;
+}
+
+/** Opens/closes the quest board panel -- same proximity-gated pattern as
+ * updateStoreToggle(), but the panel is read-only (no buy buttons), so
+ * opening it just renders the current quest list once. */
+function updateQuestNpcToggle() {
+  if (!questNpcToggle.requested) return;
+  questNpcToggle.requested = false;
+
+  if (!questBoardOpen) {
+    if (!isNearQuestNpc()) {
+      chat.addSystemLine(`You need to be near ${questNpcInfo?.name || "the quest giver"} to check the quest board.`);
+      return;
+    }
+    questBoardOpen = true;
+    renderQuestBoard();
+  } else {
+    questBoardOpen = false;
+  }
+  if (questBoardPanelEl) questBoardPanelEl.classList.toggle("hidden", !questBoardOpen);
 }
 
 /** Rebuilds the party panel's roster from local.partyRoster (server-sent
@@ -549,8 +613,9 @@ function startGame(character) {
       questDefs = data.questDefs || {};
       storeCatalog = data.storeCatalog || [];
       storeNpcInfo = data.storeNpc || null;
+      questNpcInfo = data.questNpc || null;
       renderInventory();
-      renderQuestLog();
+      refreshQuestPanels();
       renderPartyPanel();
       updateXpUI();
 
@@ -563,6 +628,15 @@ function startGame(character) {
         npcs.set(STORE_NPC_LABEL_ID, npc);
         labelEls.set(STORE_NPC_LABEL_ID, makeLabel(storeNpcInfo.name, "npc"));
         if (storeHeaderEl) storeHeaderEl.textContent = storeNpcInfo.name;
+      }
+
+      // Quest NPC (server/questNpc.js) -- same treatment as the store NPC
+      // above, a single static "Elder Maren" spawned once here.
+      if (questNpcInfo && !npcs.has(QUEST_NPC_LABEL_ID)) {
+        const qnpc = new QuestNpc(scene, questNpcInfo, questNpcInfo.name);
+        npcs.set(QUEST_NPC_LABEL_ID, qnpc);
+        labelEls.set(QUEST_NPC_LABEL_ID, makeLabel(questNpcInfo.name, "npc"));
+        if (questBoardHeaderEl) questBoardHeaderEl.textContent = questNpcInfo.name;
       }
 
       local.mesh = createCharacterMesh(data.self.color, local.equipment);
@@ -861,7 +935,7 @@ function startGame(character) {
     // needed the way remote-vs-local branches elsewhere in this file do.
     onQuestProgress: (data) => {
       local.quests[data.id] = { progress: data.progress, completed: data.completed };
-      renderQuestLog(); // matches renderInventory()'s always-refresh pattern, cheap DOM rebuild
+      refreshQuestPanels(); // matches renderInventory()'s always-refresh pattern, cheap DOM rebuild
     },
 
     // Broadcast to everyone (mirrors the level-up chat announcement above),
@@ -1352,6 +1426,14 @@ function animate() {
   if (storeOpen && !isNearStoreNpc()) {
     storeOpen = false;
     if (storePanelEl) storePanelEl.classList.add("hidden");
+  }
+  updateQuestNpcToggle();
+  // Same auto-close-on-walk-away treatment as the store panel above, even
+  // though the quest board has no server action to protect -- staying
+  // consistent with every other proximity-gated panel in this file.
+  if (questBoardOpen && !isNearQuestNpc()) {
+    questBoardOpen = false;
+    if (questBoardPanelEl) questBoardPanelEl.classList.add("hidden");
   }
   updateZoneLabel();
   if (partyOpen) renderPartyPanel(); // keeps roster hp bars live, see renderPartyPanel()'s comment

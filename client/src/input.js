@@ -50,6 +50,13 @@ export const menuToggle = { requested: false };
 // closer" hint) is main.js's call, based on distance to the NPC.
 export const storeToggle = { requested: false };
 
+// Edge-triggered quest-board-panel toggle (server/questNpc.js's quest-giver
+// NPC): set true on the quest-NPC keybind/button, and cleared by main.js
+// once it's been consumed for a frame. Same proximity-gated pattern as
+// storeToggle above -- distinct from questLogToggle, which opens the
+// always-available "L" quest log regardless of position.
+export const questNpcToggle = { requested: false };
+
 // Converts a raw pointer-drag delta (dx, dy in screen px) into camera
 // azimuth/elevation deltas. Pure/exported so the sign convention can be unit
 // tested without a browser. Vertical (elevation) matches the conventional
@@ -156,6 +163,10 @@ export function initInput(canvas) {
       e.preventDefault();
       storeToggle.requested = true;
     }
+    if (e.code === "KeyN") {
+      e.preventDefault();
+      questNpcToggle.requested = true;
+    }
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
       keys.sprint = true;
     }
@@ -232,6 +243,7 @@ function setupTouchControls(canvas) {
   const micBtn = document.getElementById("touch-mic-btn");
   const menuBtn = document.getElementById("touch-menu-btn");
   const storeBtn = document.getElementById("touch-store-btn");
+  const questNpcBtn = document.getElementById("touch-quest-npc-btn");
 
   let joystickTouchId = null;
   let joystickCenterX = 0;
@@ -381,6 +393,17 @@ function setupTouchControls(canvas) {
       (e) => {
         e.preventDefault();
         storeToggle.requested = true;
+      },
+      { passive: false }
+    );
+  }
+
+  if (questNpcBtn) {
+    questNpcBtn.addEventListener(
+      "touchstart",
+      (e) => {
+        e.preventDefault();
+        questNpcToggle.requested = true;
       },
       { passive: false }
     );

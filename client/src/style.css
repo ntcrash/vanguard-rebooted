@@ -661,6 +661,46 @@ html, body {
   cursor: default;
 }
 
+/* Quest board panel (server/questNpc.js's Elder Maren) -- top-center,
+   deliberately clear of every other corner-anchored panel: #hud/#help sit
+   top-left, #party-panel top-right, #chat bottom-left, #store-panel
+   bottom-right. */
+#quest-board-panel {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 280px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 14px;
+  background: rgba(14, 20, 26, 0.92);
+  border: 1px solid rgba(126, 224, 255, 0.35);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color: #e8f0f5;
+}
+
+#quest-board-panel.hidden {
+  display: none;
+}
+
+#quest-board-header {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+#quest-board-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 #touch-controls {
   display: none;
   position: absolute;
