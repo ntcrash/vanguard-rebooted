@@ -7,6 +7,7 @@ import { Server } from "socket.io";
 import { loadPlayerRecord, savePlayerRecord, savePlayerRecords } from "./playerStore.js";
 import { resolveLogin } from "./accountStore.js";
 import { QUEST_DEFS, initQuestState, advanceKillQuests, advanceCollectQuests } from "./quests.js";
+import { CHARACTER_CLASSES, DEFAULT_CLASS_ID, sanitizeClassId, classMaxHp, classDamage } from "./classes.js";
 import { PARTY_MAX_SIZE, createParty, isPartyFull, isPartyMember, isPartyLeader, addPartyMember, removePartyMember } from "./parties.js";
 import { computeVoicePairs, diffVoicePairs, splitPairKey } from "./voiceProximity.js";
 import {
@@ -659,6 +660,7 @@ function dropVoicePairsFor(playerId) {
  * excludes transient/derived fields like `id`, `alive`, and `lastAttackAt`. */
 function playerSaveRecord(player) {
   return {
+    characterClass: player.characterClass,
     level: player.level,
     xp: player.xp,
     xpToNext: player.xpToNext,
@@ -760,16 +762,28 @@ io.on("connection", (socket) => {
   const chosenName = socket.data.accountName;
   const saved = loadPlayerRecord(chosenName);
 
+  // Class is chosen once, the first time an account is created, and then
+  // locked in forever after (see server/classes.js) — a returning player's
+  // saved class always wins over whatever the client's auth payload sends,
+  // the same way their name/password can't be changed by just typing
+  // something different on the login screen. A saved record predating this
+  // feature (no characterClass field yet) falls back to whatever the client
+  // requested (or DEFAULT_CLASS_ID) rather than losing its already-saved HP.
+  const requestedClass = sanitizeClassId(auth.characterClass) || DEFAULT_CLASS_ID;
+  const characterClass = (saved && sanitizeClassId(saved.characterClass)) || requestedClass;
+  const baseMaxHp = classMaxHp(characterClass, 100);
+
   const player = {
     id: socket.id,
     name: chosenName,
     color: sanitizeChosenColor(auth.color) || randomColor(),
+    characterClass,
     x: (Math.random() - 0.5) * 20,
     y: 0,
     z: (Math.random() - 0.5) * 20,
     rotY: 0,
-    hp: 100,
-    maxHp: 100,
+    hp: baseMaxHp,
+    maxHp: baseMaxHp,
     alive: true,
     lastAttackAt: 0,
     lastMoveAt: Date.now(), // anti-cheat clock -- see MAX_MOVE_SPEED above
@@ -910,7 +924,11 @@ io.on("connection", (socket) => {
     const dist = Math.hypot(mob.x - p.x, mob.z - p.z);
     if (dist > MOB_ATTACK_RANGE) return;
 
-    mob.hp = Math.max(0, mob.hp - MOB_DAMAGE);
+    // Outgoing melee damage is nudged by the attacker's class (see
+    // server/classes.js) — MOB_DAMAGE is the shared per-hit baseline every
+    // class's damageMultiplier scales from, same idea as classMaxHp() below
+    // scaling the shared 100 baseMaxHp.
+    mob.hp = Math.max(0, mob.hp - classDamage(p.characterClass, MOB_DAMAGE));
     if (mob.hp <= 0) {
       mob.alive = false;
       io.emit("mobDied", { id: mob.id, name: mob.name, killedBy: p.name });

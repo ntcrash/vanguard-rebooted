@@ -6,18 +6,27 @@ const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
  * Thin wrapper around the socket.io connection. Callbacks are set once by
  * main.js; this module just centralizes the event names in one place.
  *
- * `character` (optional) is the { name, color, password } chosen on the
- * login screen; it's sent as socket.io auth payload so the server can verify
- * the account (see server/accountStore.js + the io.use() middleware in
- * server/index.js) instead of generating a random name/color for this
- * session. A bad password (or any other login rejection) surfaces to
- * `handlers.onConnectError` as a socket.io `connect_error` whose `.message`
- * is the human-readable reason the server gave.
+ * `character` (optional) is the { name, color, password, characterClass }
+ * chosen on the login screen; it's sent as socket.io auth payload so the
+ * server can verify the account (see server/accountStore.js + the io.use()
+ * middleware in server/index.js) instead of generating a random name/color
+ * for this session. A bad password (or any other login rejection) surfaces
+ * to `handlers.onConnectError` as a socket.io `connect_error` whose
+ * `.message` is the human-readable reason the server gave. `characterClass`
+ * only actually takes effect the first time an account is created (see
+ * server/classes.js) — it's ignored by the server on every login after that.
  */
 export function connectToServer(handlers, character) {
   const socket = io(SERVER_URL, {
     transports: ["websocket", "polling"],
-    auth: character ? { name: character.name, color: character.color, password: character.password } : {},
+    auth: character
+      ? {
+          name: character.name,
+          color: character.color,
+          password: character.password,
+          characterClass: character.characterClass,
+        }
+      : {},
   });
 
   socket.on("connect", () => handlers.onConnect?.(socket.id));

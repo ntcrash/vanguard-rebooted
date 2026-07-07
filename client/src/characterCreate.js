@@ -1,7 +1,8 @@
 // Pre-game login screen. Gathers a username + password (accounts, see
-// server/accountStore.js) plus a color from a small fixed palette before the
-// client ever opens a socket connection, then hands the choice off to
-// main.js to kick off the actual game/network setup.
+// server/accountStore.js) plus a color from a small fixed palette and a
+// character class (see server/classes.js) before the client ever opens a
+// socket connection, then hands the choice off to main.js to kick off the
+// actual game/network setup.
 //
 // This replaced the old "auto-assign a random name/color on connect" flow
 // first with a name-only character-creation step, and now with a real (if
@@ -21,14 +22,28 @@ const PALETTE = [
   "hsl(320, 60%, 60%)",
 ];
 
+// Mirrors server/classes.js's CHARACTER_CLASSES ids/names/descriptions (kept
+// as a separate client-side copy, same pattern as PALETTE above, since this
+// screen renders before a socket connection exists to ask the server for
+// anything). A class is chosen once here and locked in forever after by the
+// server the first time this account is created — picking a different one
+// on a later login has no effect on a returning account (see
+// server/index.js's connection handler).
+const CLASSES = [
+  { id: "warrior", name: "Warrior", description: "Balanced fighter — steady HP and damage." },
+  { id: "paladin", name: "Paladin", description: "Tanky defender — highest HP, softest hits." },
+  { id: "rogue", name: "Rogue", description: "Fragile striker — lowest HP, hardest hits." },
+  { id: "mage", name: "Mage", description: "Glass cannon — low HP, strong hits ahead of a future spellbook." },
+];
+
 const NAME_PATTERN = /^[A-Za-z0-9 _-]{1,20}$/;
 const PASSWORD_MIN_LENGTH = 4;
 const PASSWORD_MAX_LENGTH = 64;
 
 /**
  * Wires up the #login-screen overlay already present in index.html. Calls
- * `onEnter({ name, color, password })` once the player submits a valid
- * login and hides the overlay.
+ * `onEnter({ name, color, password, characterClass })` once the player
+ * submits a valid login and hides the overlay.
  *
  * Returns a small controller object so main.js can react to the server
  * accepting/rejecting the login attempt:
@@ -42,10 +57,12 @@ export function initCharacterCreate(onEnter) {
   const nameInput = document.getElementById("name-input");
   const passwordInput = document.getElementById("password-input");
   const swatchesEl = document.getElementById("color-swatches");
+  const classOptionsEl = document.getElementById("class-options");
   const enterBtn = document.getElementById("enter-world-btn");
   const errorEl = document.getElementById("login-error");
 
   let selectedColor = PALETTE[0];
+  let selectedClass = CLASSES[0].id;
 
   PALETTE.forEach((color, i) => {
     const swatch = document.createElement("button");
@@ -61,6 +78,20 @@ export function initCharacterCreate(onEnter) {
     swatchesEl.appendChild(swatch);
   });
 
+  CLASSES.forEach((cls, i) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "class-option" + (i === 0 ? " selected" : "");
+    option.title = cls.description;
+    option.textContent = cls.name;
+    option.addEventListener("click", () => {
+      selectedClass = cls.id;
+      classOptionsEl.querySelectorAll(".class-option").forEach((el) => el.classList.remove("selected"));
+      option.classList.add("selected");
+    });
+    classOptionsEl.appendChild(option);
+  });
+
   function submit() {
     const name = nameInput.value.trim();
     if (!NAME_PATTERN.test(name)) {
@@ -74,7 +105,7 @@ export function initCharacterCreate(onEnter) {
     }
     errorEl.textContent = "";
     screen.classList.add("hidden");
-    onEnter({ name, color: selectedColor, password });
+    onEnter({ name, color: selectedColor, password, characterClass: selectedClass });
   }
 
   enterBtn.addEventListener("click", submit);

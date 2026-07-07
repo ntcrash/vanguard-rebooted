@@ -10,6 +10,19 @@ tagged there.
 
 ### Added
 
+- Character classes: choose Warrior, Paladin, Rogue, or Mage on the login
+  screen alongside your name/password/color (new `#class-options` picker in
+  `client/src/characterCreate.js`/`index.html`). A new `server/classes.js`
+  module (mirroring `quests.js`'s "pure logic in its own file" pattern) holds
+  each class's `maxHpMultiplier`/`damageMultiplier` plus `sanitizeClassId()`/
+  `classMaxHp()`/`classDamage()` helpers; `server/index.js` applies these to
+  a player's starting max HP and outgoing melee damage (the `attack`
+  handler's `mob.hp -= MOB_DAMAGE` became `classDamage(p.characterClass,
+  MOB_DAMAGE)`). Like name/password, a class is chosen once — the first time
+  an account is created — and persisted forever after in
+  `server/data/players.json`; a later login can't switch it, even if the
+  client sends a different one. HUD's level display now reads e.g. "Level 3
+  Rogue" instead of just "Level 3".
 - Esc game menu: pressing `Esc` (or tapping the new ☰ touch button) opens a
   centered Resume / Save Game / Exit to Login menu, mirroring the toggle
   pattern already used by the inventory/quest/party panels. "Save Game" asks

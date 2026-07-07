@@ -5,7 +5,6 @@ reprioritized based on what's more fun to build/play.
 
 # Fixes and features
 - [Add] a local client (none web browser) using Electron or something similar
-- [Add] Character Classes, (Paladin, warrior, rogue, mage, and others)
 - [Add] Spell attacks, spells should be based on character class, and level
 - [fix] create account, add account, and create character.  An account should be able to have multiple characters
 - [Add] NPC for quests

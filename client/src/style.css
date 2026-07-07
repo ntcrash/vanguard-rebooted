@@ -797,6 +797,27 @@ html, body {
   box-shadow: 0 0 0 2px #7ee0ff;
 }
 
+#class-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.class-option {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #e8f0f5;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.class-option.selected {
+  border-color: #7ee0ff;
+  background: rgba(126, 224, 255, 0.18);
+}
+
 #login-error {
   min-height: 16px;
   margin: 4px 0 0;
