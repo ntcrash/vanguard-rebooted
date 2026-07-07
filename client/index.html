@@ -141,15 +141,50 @@
           />
           <p class="hint">New name? That password creates your account. Returning? Use the same one.</p>
 
-          <label>Color</label>
-          <div id="color-swatches"></div>
-
-          <label>Class</label>
-          <div id="class-options"></div>
-
           <p id="login-error"></p>
 
           <button id="enter-world-btn" type="button">Enter World</button>
+        </div>
+      </div>
+
+      <!-- Multi-character accounts (server/characterStore.js): shown right
+           after a successful login, before the game itself ever starts. An
+           account can own several characters; this lets the player resume
+           one of them or create a new one (name/color/class -- the same
+           three choices the old single-screen login used to gather). -->
+      <div id="character-select-screen" class="hidden">
+        <div id="character-select-panel">
+          <h1>Choose Your Character</h1>
+          <p class="subtitle" id="character-select-account-label"></p>
+
+          <div id="character-list"></div>
+
+          <div id="character-create-form" class="hidden">
+            <label for="character-name-input">Character Name</label>
+            <input
+              id="character-name-input"
+              type="text"
+              maxlength="20"
+              placeholder="Name your character…"
+              autocomplete="off"
+              spellcheck="false"
+            />
+
+            <label>Color</label>
+            <div id="character-color-swatches"></div>
+
+            <label>Class</label>
+            <div id="character-class-options"></div>
+
+            <div id="character-create-actions">
+              <button id="character-create-confirm-btn" type="button">Create Character</button>
+              <button id="character-create-cancel-btn" type="button">Cancel</button>
+            </div>
+          </div>
+
+          <p id="character-select-error"></p>
+
+          <button id="character-create-new-btn" type="button">+ New Character</button>
         </div>
       </div>
     </div>

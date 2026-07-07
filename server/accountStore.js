@@ -62,6 +62,16 @@ function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, SCRYPT_KEYLEN).toString("hex");
 }
 
+/** Canonical account lookup key for a chosen username — lowercased so logins
+ * are case-insensitive (see loadAll()'s comment above). Exported so
+ * server/characterStore.js (and server/index.js, which glues the two
+ * stores together for multi-character accounts) key their own per-account
+ * data the exact same way this module does internally, rather than each
+ * re-deriving `.toLowerCase()` and risking the two keyings drifting apart. */
+export function normalizeAccountKey(username) {
+  return typeof username === "string" ? username.toLowerCase() : "";
+}
+
 /** Constant-time-ish comparison of two hex hash strings (guards against
  * trivial timing attacks on the comparison itself; scrypt's cost is the real
  * defense against brute-forcing the password). */
@@ -76,7 +86,7 @@ function hashesMatch(a, b) {
 export function accountExists(username) {
   if (!username) return false;
   const all = loadAll();
-  return Object.prototype.hasOwnProperty.call(all, username.toLowerCase());
+  return Object.prototype.hasOwnProperty.call(all, normalizeAccountKey(username));
 }
 
 /**
@@ -93,7 +103,7 @@ export function accountExists(username) {
  * actually be used as the player's in-game name / playerStore.js save key.
  */
 export function resolveLogin(username, password) {
-  const key = username.toLowerCase();
+  const key = normalizeAccountKey(username);
   const all = loadAll();
   const existing = all[key];
 

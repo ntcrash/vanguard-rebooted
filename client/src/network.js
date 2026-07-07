@@ -6,32 +6,37 @@ const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
  * Thin wrapper around the socket.io connection. Callbacks are set once by
  * main.js; this module just centralizes the event names in one place.
  *
- * `character` (optional) is the { name, color, password, characterClass }
- * chosen on the login screen; it's sent as socket.io auth payload so the
- * server can verify the account (see server/accountStore.js + the io.use()
- * middleware in server/index.js) instead of generating a random name/color
- * for this session. A bad password (or any other login rejection) surfaces
- * to `handlers.onConnectError` as a socket.io `connect_error` whose
- * `.message` is the human-readable reason the server gave. `characterClass`
- * only actually takes effect the first time an account is created (see
- * server/classes.js) — it's ignored by the server on every login after that.
+ * `account` (optional) is the { name, password } chosen on the login screen;
+ * it's sent as socket.io auth payload so the server can verify the account
+ * (see server/accountStore.js + the io.use() middleware in server/index.js)
+ * instead of generating a random name/color for this session. A bad
+ * password (or any other login rejection) surfaces to
+ * `handlers.onConnectError` as a socket.io `connect_error` whose `.message`
+ * is the human-readable reason the server gave.
+ *
+ * Logging in no longer joins the world by itself — an account can own
+ * several characters (server/characterStore.js), so the server replies with
+ * "accountReady" (that account's character roster) and waits for this
+ * client to call `selectCharacter()`/`createCharacter()` below before it
+ * actually spawns a player and sends "init".
  */
-export function connectToServer(handlers, character) {
+export function connectToServer(handlers, account) {
   const socket = io(SERVER_URL, {
     transports: ["websocket", "polling"],
-    auth: character
-      ? {
-          name: character.name,
-          color: character.color,
-          password: character.password,
-          characterClass: character.characterClass,
-        }
-      : {},
+    auth: account ? { name: account.name, password: account.password } : {},
   });
 
   socket.on("connect", () => handlers.onConnect?.(socket.id));
   socket.on("disconnect", () => handlers.onDisconnect?.());
   socket.on("connect_error", (err) => handlers.onConnectError?.(err));
+
+  // Multi-character accounts (server/characterStore.js): "accountReady"
+  // carries this account's character roster right after login succeeds;
+  // "characterActionRejected" answers a "selectCharacter"/"createCharacter"
+  // request that the server refused (name taken, account already at the
+  // character cap, unknown character, etc.).
+  socket.on("accountReady", (data) => handlers.onAccountReady?.(data));
+  socket.on("characterActionRejected", (data) => handlers.onCharacterActionRejected?.(data));
 
   socket.on("init", (data) => handlers.onInit?.(data));
   socket.on("playerJoined", (data) => handlers.onPlayerJoined?.(data));
@@ -108,6 +113,18 @@ export function connectToServer(handlers, character) {
   socket.on("saveComplete", (data) => handlers.onSaveComplete?.(data));
 
   return {
+    // Multi-character accounts (server/characterStore.js): pick an existing
+    // character off the roster "accountReady" sent, or create a brand new
+    // one — exactly one of these is called once per connection, in response
+    // to the character-select screen (client/src/characterSelect.js), and
+    // the server answers with either "init" (joined) or
+    // "characterActionRejected" (see above).
+    selectCharacter(name) {
+      socket.emit("selectCharacter", { name });
+    },
+    createCharacter({ name, color, characterClass }) {
+      socket.emit("createCharacter", { name, color, characterClass });
+    },
     sendMove(x, y, z, rotY) {
       socket.emit("move", { x, y, z, rotY });
     },

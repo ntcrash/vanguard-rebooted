@@ -41,6 +41,7 @@ import { connectToServer } from "./network.js";
 import { initChat } from "./chat.js";
 import { DamageNumbers } from "./damageNumbers.js";
 import { initCharacterCreate } from "./characterCreate.js";
+import { initCharacterSelect } from "./characterSelect.js";
 import { createVoiceManager } from "./voice.js";
 
 const canvas = document.getElementById("scene");
@@ -571,7 +572,7 @@ function setPlayerMicState(id, on) {
   refreshNameplate(id);
 }
 
-function startGame(character) {
+function startGame(account) {
   net = connectToServer({
     onConnect: () => {
       statusEl.textContent = "Connected";
@@ -596,7 +597,33 @@ function startGame(character) {
       loginScreen.showError(message);
     },
 
+    // Multi-character accounts (server/characterStore.js): the server sends
+    // this right after login succeeds, before spawning anyone into the
+    // world. `local.name` is only ever set once "init" actually arrives (see
+    // below), so it doubles here as "have we already picked a character
+    // this page session" -- a socket.io auto-reconnect (a network blip mid-
+    // game, not a fresh login) gets a brand new "accountReady" too, and
+    // should silently resume the same character rather than yanking the
+    // player back to a character-select screen they didn't ask to see again.
+    onAccountReady: (data) => {
+      if (local.name) {
+        net.selectCharacter(local.name);
+        return;
+      }
+      characterSelectScreen.show(data);
+    },
+
+    // A "selectCharacter"/"createCharacter" request the server refused
+    // (unknown character, name already taken, account at its character
+    // cap, etc.) -- shown on whichever screen is currently up so the player
+    // can correct it and immediately retry, same posture as a rejected
+    // login on the screen before this one.
+    onCharacterActionRejected: (data) => {
+      characterSelectScreen.showError(data?.reason || "That didn't work — try again.");
+    },
+
     onInit: (data) => {
+      characterSelectScreen.hide();
       local.id = data.id;
       local.name = data.self.name;
       local.rotY = data.self.rotY;
@@ -1037,10 +1064,21 @@ function startGame(character) {
       }
       if (storeOpen) renderStorePanel();
     },
-  }, character);
+  }, account);
 }
 
 const loginScreen = initCharacterCreate(startGame);
+
+// Multi-character accounts (server/characterStore.js): wired once at module
+// load, same as loginScreen above -- onSelect/onCreate just forward the
+// player's choice to the server (net.selectCharacter/net.createCharacter)
+// and wait for either "init" (success -- see onInit's characterSelectScreen
+// .hide() above) or "characterActionRejected" (see onCharacterActionRejected
+// above) to decide what happens next.
+const characterSelectScreen = initCharacterSelect({
+  onSelect: (name) => net.selectCharacter(name),
+  onCreate: (character) => net.createCharacter(character),
+});
 
 // ---- Party UI wiring --------------------------------------------------------------
 // Button/input handlers are wired once at module load (not per-connection,

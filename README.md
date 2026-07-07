@@ -12,18 +12,24 @@ a full game.
 
 ## Features
 
-- Basic account/login: choose a username, password, and color on the login
-  screen — the first login with a given name creates that account, every
-  login after that must use the same password (see `server/accountStore.js`);
-  a wrong password is rejected outright rather than silently handing you a
-  guest identity
-- Character classes: pick Warrior, Paladin, Rogue, or Mage on the login
-  screen the first time your account is created — each nudges your max HP
-  and melee damage differently (Paladin tankiest/softest hits, Rogue
-  squishiest/hardest hits, Warrior balanced, Mage a glass cannon), shown
-  alongside your level in the HUD (see `server/classes.js`). Your class is
-  locked in for that account from then on, the same way your name/password
-  are. Each class also looks visually distinct in the world: Warrior is
+- Basic account/login: choose a username and password on the login screen —
+  the first login with a given name creates that account, every login after
+  that must use the same password (see `server/accountStore.js`); a wrong
+  password is rejected outright rather than silently handing you a guest
+  identity
+- Multi-character accounts: an account can own up to 5 characters
+  (`server/characterStore.js`) instead of always being exactly one. After
+  logging in, a character-select screen lets you resume an existing
+  character or create a new one (name, color, and class); character names
+  are unique across the whole server, and an account created before this
+  feature shipped is migrated automatically the first time it logs in again
+- Character classes: pick Warrior, Paladin, Rogue, or Mage when creating a
+  character — each nudges your max HP and melee damage differently (Paladin
+  tankiest/softest hits, Rogue squishiest/hardest hits, Warrior balanced,
+  Mage a glass cannon), shown alongside your level in the HUD (see
+  `server/classes.js`). A class is locked in for that character forever once
+  created, the same way its name is. Each class also looks visually distinct
+  in the world: Warrior is
   broader-framed with steel pauldrons, Paladin has a golden collar and
   tabard, Rogue wears a dark hood, and Mage wears a pointed hat and a
   flowing robe (see `client/src/player.js`)
@@ -68,10 +74,10 @@ a full game.
   later with full health
 - Persistent player state: level, XP, HP, inventory, equipment, and position
   are saved server-side (`server/data/players.json`, gitignored) keyed by
-  your account name, and restored automatically the next time you log in —
-  progress survives reconnects and server restarts, and (now that accounts
-  are password-protected) can't be reached by someone else just typing in
-  your name.
+  character name, and restored automatically the next time you select that
+  character — progress survives reconnects and server restarts, and (now
+  that accounts are password-protected) can't be reached by someone else
+  just typing in your character's name.
 - Server-side movement validation: every position update is checked against
   how far the fastest legitimate (sprinting) client could actually have
   moved since its last accepted move, so a modified client can't speed-hack
