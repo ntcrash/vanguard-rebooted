@@ -72,6 +72,11 @@ a full game.
   defeating the right mobs or collecting the right item advances progress
   automatically, and completing a quest grants XP and item rewards and
   announces it in chat
+- Guilds/parties: group up with other players (`P` to open the party panel)
+  — invite by name, accept/decline incoming invites, see the whole party's
+  names, leader status, and live HP at a glance, and leave or disband the
+  party; groups are capped at 5, and leadership automatically passes to
+  another member if the leader leaves
 
 Accounts are stored alongside player saves in `server/data/accounts.json`
 (gitignored, password hashes only — never plaintext).
@@ -135,12 +140,13 @@ Deploying this somewhere other players can reach it? See
 | Click (no drag) / `F` / `Space` | Melee attack (cooldown applies) |
 | `I`                     | Toggle inventory panel           |
 | `L`                     | Toggle quest log                 |
+| `P`                     | Toggle party panel                |
 | `Enter`                 | Focus chat box / send message    |
 | `Esc`                   | Clear & unfocus chat box          |
 
 On a touchscreen, a virtual joystick (bottom-left) replaces WASD, and a
-Sprint/Attack/Inventory/Quest Log button stack (bottom-right) replaces
-`Shift`/click-or-`F`/`I`/`L`. Dragging a finger anywhere else on the scene
+Sprint/Attack/Inventory/Quest Log/Party button stack (bottom-right) replaces
+`Shift`/click-or-`F`/`I`/`L`/`P`. Dragging a finger anywhere else on the scene
 orbits the camera, same as a mouse drag.
 
 ## Development notes

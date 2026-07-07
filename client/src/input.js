@@ -22,6 +22,10 @@ export const inventoryToggle = { requested: false };
 // and cleared by main.js once it's been consumed for a frame.
 export const questLogToggle = { requested: false };
 
+// Edge-triggered party-panel toggle: set true on the party keybind, and
+// cleared by main.js once it's been consumed for a frame.
+export const partyToggle = { requested: false };
+
 // On-screen movement joystick tuning, in px of finger travel from the base's
 // center. Exported as pure helpers (no DOM) so the direction/clamping math
 // can be unit tested without a browser.
@@ -89,6 +93,10 @@ export function initInput(canvas) {
     if (e.code === "KeyL") {
       e.preventDefault();
       questLogToggle.requested = true;
+    }
+    if (e.code === "KeyP") {
+      e.preventDefault();
+      partyToggle.requested = true;
     }
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
       keys.sprint = true;
@@ -160,6 +168,7 @@ function setupTouchControls(canvas) {
   const attackBtn = document.getElementById("touch-attack-btn");
   const inventoryBtn = document.getElementById("touch-inventory-btn");
   const questBtn = document.getElementById("touch-quest-btn");
+  const partyBtn = document.getElementById("touch-party-btn");
 
   let joystickTouchId = null;
   let joystickCenterX = 0;
@@ -254,6 +263,17 @@ function setupTouchControls(canvas) {
       (e) => {
         e.preventDefault();
         questLogToggle.requested = true;
+      },
+      { passive: false }
+    );
+  }
+
+  if (partyBtn) {
+    partyBtn.addEventListener(
+      "touchstart",
+      (e) => {
+        e.preventDefault();
+        partyToggle.requested = true;
       },
       { passive: false }
     );

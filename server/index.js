@@ -7,6 +7,7 @@ import { Server } from "socket.io";
 import { loadPlayerRecord, savePlayerRecord, savePlayerRecords } from "./playerStore.js";
 import { resolveLogin } from "./accountStore.js";
 import { QUEST_DEFS, initQuestState, advanceKillQuests, advanceCollectQuests } from "./quests.js";
+import { PARTY_MAX_SIZE, createParty, isPartyFull, isPartyMember, isPartyLeader, addPartyMember, removePartyMember } from "./parties.js";
 
 const PORT = process.env.PORT || 3000;
 const WORLD_BOUNDS = 170; // players are clamped to +/- this on X/Z
@@ -449,6 +450,93 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+// ---- Parties (grouping) --------------------------------------------------------
+// Lightweight party/group system: a handful of players banding together so
+// they can see each other's status at a glance. Deliberately NOT persisted
+// (see server/parties.js's file comment) — parties live only in memory for
+// as long as their members are actually online, same tradeoff already made
+// for the in-memory `mobs`/`pickups` state above.
+//
+// `parties`: partyId -> party object ({ id, leaderId, memberIds }), the pure
+// shape maintained by server/parties.js.
+// `playerPartyId`: player (socket) id -> the partyId they currently belong
+// to, for O(1) "what party is this player in" lookups without scanning every
+// party's memberIds.
+// `pendingPartyInvites`: invitee (socket) id -> { inviterId, inviterName },
+// at most one outstanding invite per player — a second invite simply
+// overwrites the first, same as a player only ever having one thing to
+// respond to at a time.
+/** @type {Map<string, {id: string, leaderId: string, memberIds: string[]}>} */
+const parties = new Map();
+/** @type {Map<string, string>} */
+const playerPartyId = new Map();
+/** @type {Map<string, {inviterId: string, inviterName: string}>} */
+const pendingPartyInvites = new Map();
+
+/** Builds the roster (name + leader flag) `partyState` sends to every member
+ * of `party` — deliberately excludes hp/level/position, since every client
+ * already tracks that for every other connected player via the existing
+ * playerMoved/playerDamaged/playerLeveledUp broadcasts; the party panel just
+ * cross-references this roster's ids against that already-tracked state
+ * instead of the server duplicating it here. */
+function partyRoster(party) {
+  return party.memberIds
+    .map((id) => players.get(id))
+    .filter(Boolean)
+    .map((p) => ({ id: p.id, name: p.name, isLeader: p.id === party.leaderId }));
+}
+
+/** Sends every current member of `partyId` the party's current roster. */
+function broadcastPartyState(partyId) {
+  const party = parties.get(partyId);
+  if (!party) return;
+  const roster = partyRoster(party);
+  for (const memberId of party.memberIds) {
+    io.to(memberId).emit("partyState", { partyId: party.id, roster });
+  }
+}
+
+/** Fully disbands `partyId`, telling every member (including whoever is left
+ * after a leave dropped the party below 2 members — see the "leaving a
+ * 1-member party" note in the `partyLeave` handler) that it's gone. */
+function disbandParty(partyId, reason) {
+  const party = parties.get(partyId);
+  if (!party) return;
+  for (const memberId of party.memberIds) {
+    playerPartyId.delete(memberId);
+    io.to(memberId).emit("partyDisbanded", { reason });
+  }
+  parties.delete(partyId);
+}
+
+/** Removes `playerId` from whatever party they're in (if any), used by both
+ * the explicit `partyLeave` socket event and the `disconnect` handler below.
+ * A party that would be left with exactly one member is disbanded outright
+ * rather than left sitting around as a "party of one" — there's no one left
+ * to group with, so the panel would just show a single-row roster with no
+ * useful actions beyond what solo play already offers. */
+function removePlayerFromParty(playerId) {
+  const partyId = playerPartyId.get(playerId);
+  if (!partyId) return;
+  const party = parties.get(partyId);
+  playerPartyId.delete(playerId);
+  if (!party) return;
+
+  const updated = removePartyMember(party, playerId);
+  if (!updated) {
+    parties.delete(partyId); // last member left; nothing more to do
+    return;
+  }
+
+  parties.set(partyId, updated);
+  if (updated.memberIds.length <= 1) {
+    disbandParty(partyId, "not enough members left");
+    return;
+  }
+
+  broadcastPartyState(partyId);
+}
+
 // ---- Persistence ----------------------------------------------------------------
 // Player progress is saved keyed by the account's display-cased name (now
 // verified by accountStore.js's login middleware, see io.use() above) — the
@@ -764,6 +852,104 @@ io.on("connection", (socket) => {
     io.emit("playerEquipmentChanged", { id: p.id, equipment: p.equipment });
   });
 
+  // ---- Parties (grouping) -------------------------------------------------
+  // See the "Parties (grouping)" block above for the in-memory storage and
+  // server/parties.js for the pure membership math this all wraps. Every
+  // handler below silently no-ops on an invalid/stale request (e.g. a
+  // double-click, or an invite whose target already left) rather than
+  // treating it as an error worth disconnecting over — same posture as the
+  // existing equipItem/unequipItem handlers just above.
+  socket.on("partyInvite", (targetName) => {
+    const inviter = players.get(socket.id);
+    if (!inviter || typeof targetName !== "string") return;
+
+    const target = Array.from(players.values()).find(
+      (p) => p.id !== inviter.id && p.name.toLowerCase() === targetName.trim().toLowerCase()
+    );
+    if (!target) {
+      socket.emit("partyNotice", { message: `No online player named "${targetName}".` });
+      return;
+    }
+    if (playerPartyId.has(target.id)) {
+      socket.emit("partyNotice", { message: `${target.name} is already in a party.` });
+      return;
+    }
+
+    const inviterPartyId = playerPartyId.get(inviter.id);
+    if (inviterPartyId) {
+      const inviterParty = parties.get(inviterPartyId);
+      if (!isPartyLeader(inviterParty, inviter.id)) {
+        socket.emit("partyNotice", { message: "Only the party leader can invite new members." });
+        return;
+      }
+      if (isPartyFull(inviterParty)) {
+        socket.emit("partyNotice", { message: `Your party is full (max ${PARTY_MAX_SIZE}).` });
+        return;
+      }
+    }
+
+    // At most one outstanding invite per invitee -- a second invite (from
+    // this or any other player) simply overwrites the first.
+    pendingPartyInvites.set(target.id, { inviterId: inviter.id, inviterName: inviter.name });
+    io.to(target.id).emit("partyInviteReceived", { inviterId: inviter.id, inviterName: inviter.name });
+    socket.emit("partyNotice", { message: `Party invite sent to ${target.name}.` });
+  });
+
+  socket.on("partyRespond", (data) => {
+    const invitee = players.get(socket.id);
+    const invite = pendingPartyInvites.get(socket.id);
+    pendingPartyInvites.delete(socket.id); // consumed either way
+    if (!invitee || !invite) return;
+
+    const accept = !!(data && data.accept);
+    const inviter = players.get(invite.inviterId);
+
+    if (!accept) {
+      if (inviter) io.to(inviter.id).emit("partyNotice", { message: `${invitee.name} declined your party invite.` });
+      return;
+    }
+    if (!inviter) {
+      socket.emit("partyNotice", { message: "That invite is no longer valid." });
+      return;
+    }
+    if (playerPartyId.has(invitee.id)) return; // joined/created another party in the meantime
+
+    // The inviter might not have a party yet (this is their first invite) --
+    // create one, led by them, on the fly.
+    let partyId = playerPartyId.get(inviter.id);
+    let party = partyId ? parties.get(partyId) : null;
+    if (!party) {
+      party = createParty(inviter.id);
+      parties.set(party.id, party);
+      playerPartyId.set(inviter.id, party.id);
+    }
+
+    if (isPartyFull(party)) {
+      socket.emit("partyNotice", { message: "That party is now full." });
+      return;
+    }
+
+    const updated = addPartyMember(party, invitee.id);
+    parties.set(updated.id, updated);
+    playerPartyId.set(invitee.id, updated.id);
+    broadcastPartyState(updated.id);
+    io.to(inviter.id).emit("partyNotice", { message: `${invitee.name} joined the party.` });
+  });
+
+  socket.on("partyLeave", () => {
+    if (!playerPartyId.has(socket.id)) return;
+    removePlayerFromParty(socket.id);
+    socket.emit("partyLeft", {});
+  });
+
+  socket.on("partyDisband", () => {
+    const partyId = playerPartyId.get(socket.id);
+    if (!partyId) return;
+    const party = parties.get(partyId);
+    if (!party || !isPartyLeader(party, socket.id)) return;
+    disbandParty(partyId, "the leader disbanded the party");
+  });
+
   socket.on("chat", (message) => {
     const p = players.get(socket.id);
     if (!p || typeof message !== "string") return;
@@ -774,6 +960,8 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     savePlayerRecord(player.name, playerSaveRecord(player));
+    removePlayerFromParty(socket.id);
+    pendingPartyInvites.delete(socket.id);
     players.delete(socket.id);
     io.emit("playerLeft", { id: socket.id });
     console.log(`[leave] ${player.name} (${socket.id}) — ${players.size} online`);

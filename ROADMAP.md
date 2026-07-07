@@ -6,4 +6,3 @@ reprioritized based on what's more fun to build/play.
 ## Later / stretch ideas
 
 - [ ] Voice chat or proximity chat
-- [ ] Guilds/parties

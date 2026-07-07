@@ -7,6 +7,35 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Guilds/parties: a lightweight grouping system so a handful of players can
+  band together. `server/parties.js` holds the pure, unit-tested membership
+  math (`createParty`/`addPartyMember`/`removePartyMember`, capped at
+  `PARTY_MAX_SIZE` = 5, with leadership passing to the next-longest-tenured
+  member if the leader leaves), mirroring the `quests.js`/`accountStore.js`
+  side-effect-free-logic-in-its-own-file pattern. `server/index.js` wires in
+  five new socket events — `partyInvite` (leader-only once a party exists,
+  at most one outstanding invite per invitee), `partyRespond` (accept/
+  decline, creating the party on the fly on a first accept),
+  `partyLeave`/`partyDisband`, and a `partyState` roster broadcast (name +
+  leader flag only — HP/level/position are cross-referenced from each
+  member's already-tracked player state rather than duplicated) sent to
+  every member on any membership change; a party that would be left with
+  exactly one member auto-disbands rather than lingering as a "party of
+  one." Parties are intentionally not persisted (same in-memory tradeoff as
+  mobs/pickups) since they only make sense while members are online
+  together. Client gained a party panel (`P` key or a new 🛡️ touch button,
+  same toggle pattern as inventory/quest log) showing each member's name,
+  leader star, and a live HP bar, an invite-by-name box, and an Accept/
+  Decline popup for incoming invites. Verified `server/parties.js`'s pure
+  membership math with a standalone Node script — 16 checks covering party
+  creation, add/remove, the max-size cap (including a no-op past the cap),
+  leadership handoff on the leader leaving, the last-member-leaves-returns-
+  null case, and non-mutation of the original party object on every
+  operation — all passed. Also ran a full integration test booting the real
+  server and driving multiple `socket.io-client` connections through invite
+  → accept → roster broadcast → non-leader-invite-rejected →
+  already-partied-invite-rejected → voluntary leave → auto-disband →
+  explicit leader disband → 5-member cap enforcement — 12/12 checks passed.
 - Simple quest system: three server-authoritative quests — "Boar Cull"
   (defeat 5 boars in the Meadow), "Wolf Hunter" (defeat 3 wolves in the
   Whispering Forest), and "Moonpetal Gathering" (collect 3 Moonpetals) —
