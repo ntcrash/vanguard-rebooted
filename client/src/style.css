@@ -43,6 +43,31 @@ html, body {
   color: #7ee0ff;
 }
 
+.player-label.mob {
+  color: #ff9d6e;
+}
+
+.health-bar {
+  width: 46px;
+  height: 5px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+  transform: translate(-50%, -100%);
+}
+
+.health-bar-fill {
+  height: 100%;
+  width: 100%;
+  background: #4caf50;
+  transition: width 0.15s ease, background-color 0.15s ease;
+}
+
+.health-bar-fill.low {
+  background: #e04b3a;
+}
+
 #hud {
   position: absolute;
   top: 12px;
@@ -57,10 +82,82 @@ html, body {
   font-weight: 600;
 }
 
+#zone-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 3px;
+  color: #b6e6a8;
+}
+
+#zone-label.forest {
+  color: #6fae5a;
+}
+
+#zone-label:empty {
+  display: none;
+}
+
+#time-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+  color: #9fb3c8;
+}
+
+#time-label:empty {
+  display: none;
+}
+
 #help {
   font-size: 12px;
   opacity: 0.75;
   margin-top: 2px;
+}
+
+#attack-cooldown {
+  margin-top: 6px;
+  width: 120px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+#attack-cooldown-fill {
+  height: 100%;
+  width: 0%;
+  background: #ff6b5e;
+  transition: width 0.05s linear, background-color 0.15s ease;
+}
+
+#attack-cooldown-fill.ready {
+  background: #7ee0ff;
+}
+
+#level-display {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 6px;
+  color: #ffd76b;
+}
+
+#xp-bar {
+  margin-top: 2px;
+  width: 160px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+#xp-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: #ffd76b;
+  transition: width 0.2s ease;
 }
 
 #chat {
@@ -103,4 +200,553 @@ html, body {
 
 #chat-input:focus {
   border-color: #7ee0ff;
+}
+
+.damage-number {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  color: #ffcf4a;
+  font-size: 15px;
+  font-weight: 700;
+  text-shadow: 0 0 4px #000, 0 0 4px #000;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.damage-number.finishing {
+  color: #ff5a4a;
+  font-size: 19px;
+}
+
+#inventory-panel {
+  position: absolute;
+  top: 50%;
+  right: 20px;
+  transform: translateY(-50%);
+  width: 220px;
+  padding: 14px;
+  background: rgba(14, 20, 26, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color: #e8f0f5;
+}
+
+#inventory-panel.hidden {
+  display: none;
+}
+
+#inventory-header {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+  margin-bottom: 10px;
+}
+
+#inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.inventory-slot {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+}
+
+.inventory-slot.empty {
+  background: rgba(255, 255, 255, 0.02);
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.inventory-slot.equippable {
+  cursor: pointer;
+}
+
+.inventory-slot.equippable:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.inventory-slot.equipped {
+  border-color: #7ee0ff;
+  box-shadow: 0 0 0 1px rgba(126, 224, 255, 0.6) inset;
+}
+
+.inventory-slot .item-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.inventory-slot .item-qty {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffd479;
+  text-shadow: 0 0 3px #000;
+}
+
+#quest-panel {
+  position: absolute;
+  top: 50%;
+  left: 20px;
+  transform: translateY(-50%);
+  width: 240px;
+  padding: 14px;
+  background: rgba(14, 20, 26, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color: #e8f0f5;
+}
+
+#quest-panel.hidden {
+  display: none;
+}
+
+#quest-header {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+  margin-bottom: 10px;
+}
+
+#quest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quest-entry {
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+}
+
+.quest-entry.completed {
+  border-color: #7ee0ff;
+  opacity: 0.7;
+}
+
+.quest-name {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.quest-desc {
+  font-size: 11px;
+  opacity: 0.75;
+  margin-bottom: 4px;
+}
+
+.quest-progress {
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffd76b;
+}
+
+#party-panel {
+  position: absolute;
+  top: 12px;
+  right: 20px;
+  width: 220px;
+  padding: 14px;
+  background: rgba(14, 20, 26, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color: #e8f0f5;
+}
+
+#party-panel.hidden {
+  display: none;
+}
+
+#party-header {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+  margin-bottom: 10px;
+}
+
+#party-roster {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+#party-roster:empty::before {
+  content: "Not in a party.";
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.party-member {
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+}
+
+.party-member-name {
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.party-member-name .leader-icon {
+  color: #ffd479;
+  font-size: 11px;
+}
+
+.party-member-hp {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.party-member-hp-fill {
+  height: 100%;
+  background: #63c96b;
+  transition: width 0.2s ease;
+}
+
+.party-member-hp-fill.low {
+  background: #e04b3a;
+}
+
+#party-invite-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+#party-invite-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(10, 15, 20, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 6px 8px;
+  color: #fff;
+  font-size: 12px;
+  outline: none;
+}
+
+#party-invite-input:focus {
+  border-color: #7ee0ff;
+}
+
+#party-invite-btn,
+#party-leave-btn,
+#party-disband-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 6px 10px;
+  color: #e8f0f5;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#party-invite-btn:hover,
+#party-leave-btn:hover,
+#party-disband-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+#party-leave-btn,
+#party-disband-btn {
+  width: 100%;
+  margin-top: 4px;
+}
+
+#party-leave-btn.hidden,
+#party-disband-btn.hidden {
+  display: none;
+}
+
+#party-invite-popup {
+  position: absolute;
+  top: 90px;
+  right: 20px;
+  width: 240px;
+  padding: 12px;
+  background: rgba(14, 20, 26, 0.95);
+  border: 1px solid rgba(126, 224, 255, 0.5);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color: #e8f0f5;
+  font-size: 12px;
+  z-index: 6;
+}
+
+#party-invite-popup.hidden {
+  display: none;
+}
+
+#party-invite-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+#party-invite-actions button {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 6px 8px;
+  color: #e8f0f5;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+#party-invite-actions button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+#party-invite-accept-btn {
+  border-color: #7ee0ff;
+}
+
+#touch-controls {
+  display: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Coarse-pointer/no-hover roughly means "touchscreen" — shows the virtual
+   joystick + action buttons only there, leaving desktop mouse+keyboard play
+   untouched. */
+@media (pointer: coarse) {
+  #touch-controls {
+    display: block;
+  }
+}
+
+#touch-joystick-base {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+#touch-joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  background: rgba(126, 224, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+#touch-action-buttons {
+  position: absolute;
+  right: 20px;
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.touch-btn {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(14, 20, 26, 0.75);
+  color: #e8f0f5;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  user-select: none;
+  padding: 0;
+}
+
+#touch-sprint-btn {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+#touch-sprint-btn.active {
+  background: rgba(126, 224, 255, 0.35);
+  border-color: #7ee0ff;
+}
+
+#touch-mic-btn.active {
+  background: rgba(126, 255, 160, 0.35);
+  border-color: #7effa0;
+}
+
+/* Proximity voice chat mic toggle -- part of #hud (which is
+   pointer-events: none so it doesn't block clicks through to the canvas),
+   so it needs pointer-events re-enabled on itself, same treatment as any
+   other clickable element sitting inside a pointer-events:none ancestor. */
+#mic-toggle-btn {
+  pointer-events: auto;
+  margin-top: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e8f0f5;
+  background: rgba(14, 20, 26, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#mic-toggle-btn.active {
+  background: rgba(126, 255, 160, 0.25);
+  border-color: #7effa0;
+  color: #d3ffe0;
+}
+
+#login-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 10, 14, 0.78);
+  backdrop-filter: blur(2px);
+  z-index: 10;
+}
+
+#login-screen.hidden {
+  display: none;
+}
+
+#login-panel {
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px 26px;
+  background: rgba(14, 20, 26, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color: #e8f0f5;
+}
+
+#login-panel h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+#login-panel .subtitle {
+  margin: 0 0 8px;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+#login-panel label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+  margin-top: 6px;
+}
+
+#name-input,
+#password-input {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 8px 10px;
+  color: #fff;
+  font-size: 14px;
+  outline: none;
+}
+
+#name-input:focus,
+#password-input:focus {
+  border-color: #7ee0ff;
+}
+
+#login-panel .hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  opacity: 0.55;
+  line-height: 1.4;
+}
+
+#color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.color-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.color-swatch.selected {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px #7ee0ff;
+}
+
+#login-error {
+  min-height: 16px;
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #ff9d8a;
+}
+
+#enter-world-btn {
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: #7ee0ff;
+  border: none;
+  border-radius: 4px;
+  color: #06222c;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+#enter-world-btn:hover {
+  background: #a2ebff;
 }

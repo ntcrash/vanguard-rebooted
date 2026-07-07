@@ -3,37 +3,17 @@
 A rough, non-binding order of what's planned next. Anything here can be
 reprioritized based on what's more fun to build/play.
 
-## v0.2 — Combat basics
+# Fixes and features
+- [Add] a local client (none web browser) using Electron or something similar
+- [Add] Character Classes, (Paladin, warrior, rogue, mage, and others)
+- [Add] Spell attacks, spells should be based on character class, and level
+- [fix] create account, add account, and create character.  An account should be able to have multiple characters
+- [Add] NPC for quests
+- [Add] NPC for store, to buy items including spells
+- [Fix] enemies aka things like boars should attack once attacked.
+- [Add] Esc should bring up game menu.  Save, exit and whatnot.
+- [Enhancement] Upgrade the character graphics
+- [Enhancement] Upgrade in game graphics
 
-- [ ] Basic melee attack (click/keybind) with cooldown
-- [ ] Health bars above characters
-- [ ] Simple mob NPCs (stationary or wandering) that can be attacked and defeated
-- [ ] Damage numbers / hit feedback
-- [ ] Respawn handling for players and mobs
-
-## v0.3 — Progression & items
-
-- [ ] Player inventory (client-side UI + server-authoritative state)
-- [ ] Item pickups in the world
-- [ ] Equippable gear that visibly changes the character model
-- [ ] Basic XP/leveling tied to defeating mobs
-
-## v0.4 — World & persistence
-
-- [ ] Larger / zoned world (more than one outdoor area)
-- [ ] Persistent player state across sessions (save/load, likely via a small DB)
-- [ ] Basic account/login instead of a random guest name each session
-
-## v0.5 — Polish & deployment
-
-- [ ] Better character models/animations (walk/run/attack) instead of primitive shapes
-- [ ] Deployment guide for hosting the server on a cloud provider
-- [ ] Basic anti-cheat / server-side movement validation (speed hacks, teleport hacks)
-- [ ] Mobile/touch controls
-
-## Later / stretch ideas
-
-- [ ] Voice chat or proximity chat
-- [ ] Guilds/parties
-- [ ] Simple quest system
-- [ ] Day/night cycle and weather
+See [CHANGELOG.md](./CHANGELOG.md) for shipped work. Add new ideas here
+whenever one comes up.

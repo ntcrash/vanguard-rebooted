@@ -1,22 +1,82 @@
 import * as THREE from "three";
-import { buildWorld } from "./world.js";
-import { createCharacterMesh, RemotePlayer } from "./player.js";
-import { initInput, keys, mouse } from "./input.js";
+import { buildWorld, torchFlicker, updateDayNight, updateRain, dayPeriodLabel, dayNightPhase } from "./world.js";
+import {
+  createCharacterMesh,
+  applyEquipment,
+  RemotePlayer,
+  triggerAttack,
+  updateAttack,
+  updateLocomotion,
+} from "./player.js";
+import { Mob } from "./mob.js";
+import { Pickup } from "./pickup.js";
+import {
+  initInput,
+  keys,
+  mouse,
+  attack as attackInput,
+  inventoryToggle,
+  questLogToggle,
+  partyToggle,
+  micToggle,
+} from "./input.js";
 import { connectToServer } from "./network.js";
 import { initChat } from "./chat.js";
+import { DamageNumbers } from "./damageNumbers.js";
+import { initCharacterCreate } from "./characterCreate.js";
+import { createVoiceManager } from "./voice.js";
 
 const canvas = document.getElementById("scene");
 const statusEl = document.getElementById("status");
+const zoneLabelEl = document.getElementById("zone-label");
+const timeLabelEl = document.getElementById("time-label");
 const labelsEl = document.getElementById("labels");
+const cooldownFillEl = document.getElementById("attack-cooldown-fill");
+const levelDisplayEl = document.getElementById("level-display");
+const xpBarFillEl = document.getElementById("xp-bar-fill");
+const inventoryPanelEl = document.getElementById("inventory-panel");
+const inventoryGridEl = document.getElementById("inventory-grid");
+const INVENTORY_SLOT_COUNT = 20; // must match server's MAX_INVENTORY_SLOTS
+const questPanelEl = document.getElementById("quest-panel");
+const questListEl = document.getElementById("quest-list");
+const partyPanelEl = document.getElementById("party-panel");
+const partyRosterEl = document.getElementById("party-roster");
+const partyInviteInputEl = document.getElementById("party-invite-input");
+const partyInviteBtnEl = document.getElementById("party-invite-btn");
+const partyLeaveBtnEl = document.getElementById("party-leave-btn");
+const partyDisbandBtnEl = document.getElementById("party-disband-btn");
+const partyInvitePopupEl = document.getElementById("party-invite-popup");
+const partyInviteTextEl = document.getElementById("party-invite-text");
+const partyInviteAcceptBtnEl = document.getElementById("party-invite-accept-btn");
+const partyInviteDeclineBtnEl = document.getElementById("party-invite-decline-btn");
+const micToggleBtnEl = document.getElementById("mic-toggle-btn");
+const touchMicBtnEl = document.getElementById("touch-mic-btn");
+
+const ATTACK_COOLDOWN = 0.6; // seconds between local attacks
+const SPRINT_MULTIPLIER = 1.8; // hold Shift (input.js's keys.sprint) to move+animate this much faster
+const MOB_ATTACK_RANGE = 3.2; // must match server's MOB_ATTACK_RANGE
+const MOB_ATTACK_FACING_DOT = 0.3; // mob must be roughly in front of the player to be targeted
 
 // ---- Renderer / scene / camera -------------------------------------------------
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
+// PCFSoftShadowMap trades a little perf for noticeably softer shadow edges
+// than the default PCF map — worth it since shadow area here is small
+// (single sun light, capped shadow camera frustum in world.js).
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// ACESFilmic + sRGB output: without a tone-mapping curve, the sun's 1.4
+// intensity directional light blows out highlights on white/pale materials
+// (character armor, stone pillars) to flat white. ACESFilmic rolls off
+// highlights more like a camera would, and sRGB output color space is the
+// correct/expected pairing for it in three r152+.
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-buildWorld(scene);
+const { torches, sky, sun, hemi, rain } = buildWorld(scene);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
 const cameraState = { azimuth: Math.PI, elevation: 0.45, distance: 8 };
@@ -38,18 +98,213 @@ const local = {
   name: null,
   mesh: null,
   rotY: 0,
+  hp: 100,
+  maxHp: 100,
+  alive: true,
   moveSpeed: 7, // units/sec
+  attackCooldownRemaining: 0, // seconds left before another attack can fire
+  level: 1,
+  xp: 0,
+  xpToNext: 100,
+  inventory: [], // [{ itemId, name, icon, qty, slot }], server-authoritative
+  equipment: { weapon: null, head: null, body: null }, // server-authoritative
+  quests: {}, // { [questId]: { progress, completed } }, server-authoritative
+  partyId: null, // server/parties.js party id, or null if not in a party
+  partyRoster: [], // [{ id, name, isLeader }], server-authoritative (see "partyState")
 };
 
-const remotePlayers = new Map(); // id -> RemotePlayer
-const labelEls = new Map(); // id -> HTMLDivElement (name tag)
+// Static quest definitions ({ id, name, description, count, ... }), sent
+// once on "init" — server/quests.js's QUEST_DEFS. Doesn't change per player,
+// unlike local.quests' progress, so it's kept separate from `local`.
+let questDefs = {};
 
-function makeLabel(text, isSelf) {
+const remotePlayers = new Map(); // id -> RemotePlayer
+const mobs = new Map(); // id -> Mob
+const pickups = new Map(); // id -> Pickup (world item pickups)
+const labelEls = new Map(); // id -> HTMLDivElement (name tag), shared by players + mobs
+const healthBarEls = new Map(); // id -> { outer, fill } HTMLDivElements, shared by players + mobs
+const damageNumbers = new DamageNumbers(labelsEl);
+let inventoryOpen = false;
+let questLogOpen = false;
+let partyOpen = false;
+// The single incoming party invite (if any) this client is currently showing
+// an Accept/Decline popup for -- mirrors pendingPartyInvites' "at most one
+// outstanding invite per player" rule on the server (server/index.js).
+let pendingIncomingInvite = null;
+
+/** Rebuilds the inventory panel's grid from local.inventory, padding out to
+ * INVENTORY_SLOT_COUNT empty slots so unused capacity is visible. */
+function renderInventory() {
+  if (!inventoryGridEl) return;
+  inventoryGridEl.innerHTML = "";
+  for (let i = 0; i < INVENTORY_SLOT_COUNT; i++) {
+    const slot = local.inventory[i];
+    const div = document.createElement("div");
+    div.className = "inventory-slot" + (slot ? "" : " empty");
+    if (slot) {
+      const isEquippable = !!slot.slot;
+      const isEquipped = isEquippable && local.equipment[slot.slot] === slot.itemId;
+      if (isEquippable) div.classList.add("equippable");
+      if (isEquipped) div.classList.add("equipped");
+
+      div.title =
+        `${slot.name} x${slot.qty}` +
+        (isEquippable ? (isEquipped ? " (equipped — click to unequip)" : " (click to equip)") : "");
+      div.innerHTML =
+        `<span class="item-icon">${slot.icon}</span>` +
+        (slot.qty > 1 ? `<span class="item-qty">${slot.qty}</span>` : "");
+
+      // Gear (weapon/head/body slot) can be equipped/unequipped by clicking
+      // its inventory tile — re-clicking an equipped item unequips it. The
+      // server is the source of truth: this only requests the change; the
+      // visible result comes back via "playerEquipmentChanged".
+      if (isEquippable) {
+        div.addEventListener("click", () => {
+          if (isEquipped) net?.sendUnequip(slot.slot);
+          else net?.sendEquip(slot.itemId);
+        });
+      }
+    }
+    inventoryGridEl.appendChild(div);
+  }
+}
+
+function updateInventoryToggle() {
+  if (!inventoryToggle.requested) return;
+  inventoryToggle.requested = false;
+  inventoryOpen = !inventoryOpen;
+  if (inventoryPanelEl) inventoryPanelEl.classList.toggle("hidden", !inventoryOpen);
+}
+
+/** Rebuilds the quest log panel from questDefs (static) + local.quests
+ * (this player's live progress against each one), in questDefs' insertion
+ * order so the list doesn't reshuffle as quests complete. */
+function renderQuestLog() {
+  if (!questListEl) return;
+  questListEl.innerHTML = "";
+  for (const [id, def] of Object.entries(questDefs)) {
+    const q = local.quests[id] || { progress: 0, completed: false };
+    const div = document.createElement("div");
+    div.className = "quest-entry" + (q.completed ? " completed" : "");
+    div.innerHTML =
+      `<div class="quest-name">${def.name}${q.completed ? " ✓" : ""}</div>` +
+      `<div class="quest-desc">${def.description}</div>` +
+      `<div class="quest-progress">${Math.min(q.progress, def.count)}/${def.count}</div>`;
+    questListEl.appendChild(div);
+  }
+}
+
+function updateQuestLogToggle() {
+  if (!questLogToggle.requested) return;
+  questLogToggle.requested = false;
+  questLogOpen = !questLogOpen;
+  if (questPanelEl) questPanelEl.classList.toggle("hidden", !questLogOpen);
+}
+
+/** Rebuilds the party panel's roster from local.partyRoster (server-sent
+ * names + leader flag) plus each member's hp/maxHp -- read straight off
+ * `local` (self) or the matching RemotePlayer, both of which are already
+ * kept up to date by the existing playerDamaged/playerLeveledUp/
+ * playerRespawned handlers below, so the server doesn't need to duplicate
+ * hp into every "partyState" broadcast. Called every frame while the panel
+ * is open (cheap: at most PARTY_MAX_SIZE rows), same as the floating health
+ * bars' per-frame refresh, so a member's hp bar here stays live without
+ * wiring a re-render call into every place hp can change. */
+function renderPartyPanel() {
+  if (!partyRosterEl) return;
+  partyRosterEl.innerHTML = "";
+  for (const member of local.partyRoster) {
+    const hp = member.id === local.id ? local.hp : remotePlayers.get(member.id)?.hp ?? 0;
+    const maxHp = member.id === local.id ? local.maxHp : remotePlayers.get(member.id)?.maxHp ?? 100;
+    const pct = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) * 100 : 0;
+
+    const div = document.createElement("div");
+    div.className = "party-member";
+    div.innerHTML =
+      `<div class="party-member-name">${member.isLeader ? '<span class="leader-icon">★</span>' : ""}${member.name}</div>` +
+      `<div class="party-member-hp"><div class="party-member-hp-fill${pct <= 35 ? " low" : ""}" style="width:${pct}%"></div></div>`;
+    partyRosterEl.appendChild(div);
+  }
+
+  const isLeader = local.partyRoster.find((m) => m.id === local.id)?.isLeader ?? false;
+  if (partyLeaveBtnEl) partyLeaveBtnEl.classList.toggle("hidden", !local.partyId);
+  if (partyDisbandBtnEl) partyDisbandBtnEl.classList.toggle("hidden", !local.partyId || !isLeader);
+}
+
+function updatePartyToggle() {
+  if (!partyToggle.requested) return;
+  partyToggle.requested = false;
+  partyOpen = !partyOpen;
+  if (partyPanelEl) partyPanelEl.classList.toggle("hidden", !partyOpen);
+  if (partyOpen) renderPartyPanel();
+}
+
+/** Toggles this player's own mic on/off (proximity voice chat) -- requests
+ * mic hardware access on first enable (see voice.js's ensureLocalStream),
+ * tells the server so other clients' nameplates can show the icon, and
+ * updates this client's own button state. Mirrors the other panel-toggle
+ * functions' edge-triggered "requested" flag pattern, even though this
+ * toggles a mic rather than a panel. */
+function updateMicToggle() {
+  if (!micToggle.requested) return;
+  micToggle.requested = false;
+  micOn = !micOn;
+  voice.setMicEnabled(micOn);
+  net?.sendMicState(micOn);
+  if (micToggleBtnEl) {
+    micToggleBtnEl.textContent = micOn ? "\u{1F3A4} Mic On" : "\u{1F3A4} Mic Off";
+    micToggleBtnEl.classList.toggle("active", micOn);
+  }
+  if (touchMicBtnEl) touchMicBtnEl.classList.toggle("active", micOn);
+}
+
+/** Shows the Accept/Decline popup for an incoming party invite, replacing
+ * any previous one this client hadn't responded to yet -- mirrors the
+ * server's own "at most one outstanding invite" rule. */
+function showPartyInvitePopup(inviterId, inviterName) {
+  pendingIncomingInvite = { inviterId, inviterName };
+  if (partyInviteTextEl) partyInviteTextEl.textContent = `${inviterName} invited you to a party.`;
+  if (partyInvitePopupEl) partyInvitePopupEl.classList.remove("hidden");
+}
+
+function hidePartyInvitePopup() {
+  pendingIncomingInvite = null;
+  if (partyInvitePopupEl) partyInvitePopupEl.classList.add("hidden");
+}
+
+function makeLabel(text, variant) {
   const div = document.createElement("div");
-  div.className = "player-label" + (isSelf ? " self" : "");
+  div.className = "player-label" + (variant ? ` ${variant}` : "");
   div.textContent = text;
   labelsEl.appendChild(div);
   return div;
+}
+
+function makeHealthBar() {
+  const outer = document.createElement("div");
+  outer.className = "health-bar";
+  const fill = document.createElement("div");
+  fill.className = "health-bar-fill";
+  outer.appendChild(fill);
+  labelsEl.appendChild(outer);
+  return { outer, fill };
+}
+
+function setHealthBarHp(id, hp, maxHp) {
+  const bar = healthBarEls.get(id);
+  if (!bar) return;
+  const pct = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) * 100 : 0;
+  bar.fill.style.width = `${pct}%`;
+  bar.fill.classList.toggle("low", pct <= 35);
+}
+
+/** Refreshes the local player's level/XP HUD from local.level/xp/xpToNext. */
+function updateXpUI() {
+  if (levelDisplayEl) levelDisplayEl.textContent = `Level ${local.level}`;
+  if (xpBarFillEl) {
+    const pct = local.xpToNext > 0 ? Math.max(0, Math.min(1, local.xp / local.xpToNext)) * 100 : 0;
+    xpBarFillEl.style.width = `${pct}%`;
+  }
 }
 
 // ---- Chat -----------------------------------------------------------------------
@@ -62,68 +317,498 @@ const chat = initChat((text) => {
 
 let net; // assigned below, referenced by chat callback above via closure
 
-net = connectToServer({
-  onConnect: () => {
-    statusEl.textContent = "Connected";
-  },
-  onDisconnect: () => {
-    statusEl.textContent = "Disconnected — reconnecting…";
-  },
-  onConnectError: () => {
-    statusEl.textContent = "Cannot reach server (is it running on :3000?)";
-  },
-
-  onInit: (data) => {
-    local.id = data.id;
-    local.name = data.self.name;
-    local.rotY = data.self.rotY;
-
-    local.mesh = createCharacterMesh(data.self.color);
-    local.mesh.position.set(data.self.x, data.self.y, data.self.z);
-    scene.add(local.mesh);
-    labelEls.set(local.id, makeLabel(local.name, true));
-
-    statusEl.textContent = `Connected as ${local.name}`;
-    chat.addSystemLine(`You joined as ${local.name}.`);
-
-    for (const p of data.players) {
-      if (p.id === local.id) continue;
-      spawnRemote(p);
-    }
-  },
-
-  onPlayerJoined: (p) => {
-    spawnRemote(p);
-    chat.addSystemLine(`${p.name} joined.`);
-  },
-
-  onPlayerMoved: (data) => {
-    const rp = remotePlayers.get(data.id);
-    if (rp) rp.setTarget(data.x, data.y, data.z, data.rotY);
-  },
-
-  onPlayerLeft: (data) => {
-    const rp = remotePlayers.get(data.id);
-    if (rp) {
-      rp.dispose(scene);
-      remotePlayers.delete(data.id);
-    }
-    const label = labelEls.get(data.id);
-    if (label) {
-      label.remove();
-      labelEls.delete(data.id);
-    }
-  },
-
-  onChat: (data) => {
-    chat.addLine(data.name, data.text, data.id === local.id);
-  },
+// Proximity voice chat (client/src/voice.js). Built against a small facade
+// rather than `net` directly, since `net` itself isn't assigned until
+// startGame() runs (on login) -- the facade just forwards to whatever `net`
+// currently is by the time voice.js actually calls it, same closure trick
+// the chat callback above already relies on.
+const voice = createVoiceManager({
+  sendVoiceSignal: (targetId, data) => net?.sendVoiceSignal(targetId, data),
 });
+let micOn = false;
+const playerNames = new Map(); // id -> display name, for rebuilding a nameplate's text when its mic indicator changes
+const micOnState = new Map(); // id -> bool, last-known mic-toggle state per player (cosmetic only)
+
+/** Rebuilds a player's nameplate text from their stored name plus a trailing
+ * mic icon if their mic is currently toggled on -- the only two things a
+ * nameplate ever shows, so this always fully replaces (rather than patches)
+ * the label's textContent. */
+function refreshNameplate(id) {
+  const label = labelEls.get(id);
+  const name = playerNames.get(id);
+  if (!label || !name) return;
+  label.textContent = micOnState.get(id) ? `${name} \u{1F3A4}` : name;
+}
+
+function setPlayerMicState(id, on) {
+  micOnState.set(id, !!on);
+  refreshNameplate(id);
+}
+
+function startGame(character) {
+  net = connectToServer({
+    onConnect: () => {
+      statusEl.textContent = "Connected";
+    },
+    onDisconnect: () => {
+      statusEl.textContent = "Disconnected — reconnecting…";
+      // Every peer connection was necessarily with players on this same
+      // server session -- a reconnect gets entirely new "voicePeerJoin"
+      // events (or none, if no one's nearby yet) rather than resuming these.
+      voice.disposeAll();
+    },
+    onConnectError: (err) => {
+      // Covers both "server unreachable" and a rejected login (bad
+      // password, invalid name — see server/index.js's io.use() middleware).
+      // Either way, stop this socket from silently auto-retrying with the
+      // same (possibly wrong) credentials, and send the player back to the
+      // login screen with the server's reason so they can fix it and
+      // resubmit, which opens a fresh connection via startGame().
+      net.raw.disconnect();
+      const message = err?.message || "Cannot reach server (is it running on :3000?)";
+      statusEl.textContent = message;
+      loginScreen.showError(message);
+    },
+
+    onInit: (data) => {
+      local.id = data.id;
+      local.name = data.self.name;
+      local.rotY = data.self.rotY;
+      local.hp = data.self.hp ?? 100;
+      local.maxHp = data.self.maxHp ?? 100;
+      local.alive = data.self.alive ?? true;
+      local.inventory = data.self.inventory || [];
+      local.equipment = data.self.equipment || { weapon: null, head: null, body: null };
+      local.level = data.self.level ?? 1;
+      local.xp = data.self.xp ?? 0;
+      local.xpToNext = data.self.xpToNext ?? 100;
+      local.quests = data.self.quests || {};
+      // A fresh connection never starts already in a party server-side (see
+      // server/index.js's connection handler) -- reset any stale roster from
+      // a prior connection so a reconnect doesn't show a party we've already
+      // left as far as the server is concerned.
+      local.partyId = null;
+      local.partyRoster = [];
+      questDefs = data.questDefs || {};
+      renderInventory();
+      renderQuestLog();
+      renderPartyPanel();
+      updateXpUI();
+
+      local.mesh = createCharacterMesh(data.self.color, local.equipment);
+      local.mesh.position.set(data.self.x, data.self.y, data.self.z);
+      scene.add(local.mesh);
+      playerNames.set(local.id, local.name);
+      labelEls.set(local.id, makeLabel(local.name, "self"));
+      healthBarEls.set(local.id, makeHealthBar());
+      setHealthBarHp(local.id, local.hp, local.maxHp);
+      // A reconnect gets a fresh socket id and fresh server-side voice state
+      // (server/index.js always starts a joining player's micOn at false),
+      // so the mic toggle itself resets here too rather than carrying a
+      // stale "on" from a previous connection into a session the server
+      // doesn't know about yet.
+      micOn = false;
+      voice.setMicEnabled(false);
+      if (micToggleBtnEl) {
+        micToggleBtnEl.textContent = "\u{1F3A4} Mic Off";
+        micToggleBtnEl.classList.remove("active");
+      }
+      if (touchMicBtnEl) touchMicBtnEl.classList.remove("active");
+
+      statusEl.textContent = `Connected as ${local.name}`;
+      chat.addSystemLine(
+        data.newAccount ? `Account created — welcome, ${local.name}!` : `You joined as ${local.name}.`
+      );
+
+      for (const p of data.players) {
+        if (p.id === local.id) continue;
+        spawnRemote(p);
+      }
+
+      for (const m of data.mobs || []) {
+        if (m.alive) spawnMob(m);
+      }
+
+      for (const pk of data.pickups || []) {
+        spawnPickup(pk);
+      }
+    },
+
+    onPlayerJoined: (p) => {
+      spawnRemote(p);
+      chat.addSystemLine(`${p.name} joined.`);
+    },
+
+    onPlayerMoved: (data) => {
+      const rp = remotePlayers.get(data.id);
+      if (rp) rp.setTarget(data.x, data.y, data.z, data.rotY);
+    },
+
+    onPlayerLeft: (data) => {
+      const rp = remotePlayers.get(data.id);
+      if (rp) {
+        rp.dispose(scene);
+        remotePlayers.delete(data.id);
+      }
+      const label = labelEls.get(data.id);
+      if (label) {
+        label.remove();
+        labelEls.delete(data.id);
+      }
+      const bar = healthBarEls.get(data.id);
+      if (bar) {
+        bar.outer.remove();
+        healthBarEls.delete(data.id);
+      }
+      playerNames.delete(data.id);
+      micOnState.delete(data.id);
+      // The server also drops any voice pair involving a disconnecting
+      // player and tells us via "voicePeerLeave" -- but that event and this
+      // "playerLeft" event aren't guaranteed to arrive in a particular
+      // order, so tear down defensively here too rather than depend on it.
+      voice.handlePeerLeave(data.id);
+    },
+
+    onChat: (data) => {
+      chat.addLine(data.name, data.text, data.id === local.id);
+    },
+
+    onPlayerAttacked: (data) => {
+      const rp = remotePlayers.get(data.id);
+      if (rp) rp.triggerAttack();
+    },
+
+    onMobsState: (data) => {
+      for (const m of data) {
+        const mob = mobs.get(m.id);
+        if (mob) {
+          mob.setTarget(m.x, m.y, m.z, m.rotY);
+        } else if (m.alive) {
+          spawnMob(m);
+        }
+      }
+    },
+
+    onMobDamaged: (data) => {
+      const mob = mobs.get(data.id);
+      if (mob) {
+        const dmg = mob.hp - data.hp;
+        mob.applyDamage(data.hp);
+        setHealthBarHp(data.id, mob.hp, mob.maxHp);
+        damageNumbers.spawn(mob.headWorldPosition(_dmgPos), dmg);
+      }
+    },
+
+    onMobDied: (data) => {
+      const mob = mobs.get(data.id);
+      if (mob && mob.hp > 0) {
+        damageNumbers.spawn(mob.headWorldPosition(_dmgPos), mob.hp, { finishing: true });
+      }
+      despawnMob(data.id);
+      chat.addSystemLine(`${data.name} was defeated${data.killedBy ? ` by ${data.killedBy}` : ""}.`);
+    },
+
+    onMobRespawned: (data) => {
+      spawnMob(data);
+      chat.addSystemLine(`${data.name} has respawned.`);
+    },
+
+    onPlayerDamaged: (data) => {
+      if (data.id === local.id) {
+        const dmg = local.hp - data.hp;
+        local.hp = data.hp;
+        setHealthBarHp(local.id, local.hp, local.maxHp);
+        if (local.mesh) {
+          _dmgPos.copy(local.mesh.position);
+          _dmgPos.y += 2.3;
+          damageNumbers.spawn(_dmgPos, dmg);
+        }
+      } else {
+        const rp = remotePlayers.get(data.id);
+        if (rp) {
+          const dmg = rp.hp - data.hp;
+          rp.hp = data.hp;
+          setHealthBarHp(data.id, rp.hp, rp.maxHp);
+          damageNumbers.spawn(rp.headWorldPosition(_dmgPos), dmg);
+        }
+      }
+    },
+
+    onPlayerDied: (data) => {
+      if (data.id === local.id) {
+        local.alive = false;
+        if (local.mesh) local.mesh.visible = false;
+        statusEl.textContent = "You died — respawning…";
+        chat.addSystemLine(`You were defeated${data.killedBy ? ` by a ${data.killedBy}` : ""}.`);
+      } else {
+        const rp = remotePlayers.get(data.id);
+        if (rp) rp.mesh.visible = false;
+        chat.addSystemLine(`${data.name} was defeated${data.killedBy ? ` by a ${data.killedBy}` : ""}.`);
+      }
+    },
+
+    onPlayerRespawned: (data) => {
+      if (data.id === local.id) {
+        local.hp = data.hp;
+        local.maxHp = data.maxHp;
+        local.alive = true;
+        if (local.mesh) {
+          local.mesh.position.set(data.x, data.y, data.z);
+          local.mesh.rotation.y = data.rotY;
+          local.mesh.visible = true;
+        }
+        setHealthBarHp(local.id, local.hp, local.maxHp);
+        statusEl.textContent = `Connected as ${local.name}`;
+        chat.addSystemLine("You respawned.");
+        // Force the next move tick to broadcast, so remote clients see the teleport.
+        lastSent = { x: null, y: null, z: null, rotY: null };
+      } else {
+        const rp = remotePlayers.get(data.id);
+        if (rp) {
+          rp.hp = data.hp;
+          rp.maxHp = data.maxHp;
+          rp.mesh.position.set(data.x, data.y, data.z);
+          rp.mesh.rotation.y = data.rotY;
+          rp.mesh.visible = true;
+          rp.setTarget(data.x, data.y, data.z, data.rotY);
+          setHealthBarHp(data.id, rp.hp, rp.maxHp);
+        }
+      }
+    },
+
+    // The server's anti-cheat rejected a move we sent (moved too far too
+    // fast -- almost always a lag spike rather than an actual hack attempt
+    // for a legit client). Snap back to the authoritative position/rotation
+    // it gives us so we don't keep sending moves relative to a position the
+    // server never accepted, which would just get rejected again.
+    onMoveRejected: (data) => {
+      if (!local.mesh) return;
+      local.mesh.position.set(data.x, data.y, data.z);
+      local.mesh.rotation.y = data.rotY;
+      // Force the next move tick to re-send from this corrected position.
+      lastSent = { x: null, y: null, z: null, rotY: null };
+    },
+
+    onItemPickedUp: (data) => {
+      // The server already removed this pickup for everyone; only the
+      // looting player's inventory changes (via the separate
+      // "inventoryUpdated" event below), so this just handles the world
+      // visual + a chat line.
+      despawnPickup(data.id);
+      const who = data.playerId === local.id ? "You" : data.playerName;
+      const qtyPrefix = data.qty > 1 ? `${data.qty}x ` : "";
+      chat.addSystemLine(`${who} picked up ${qtyPrefix}${data.name}.`);
+    },
+
+    onPickupRespawned: (data) => {
+      spawnPickup(data);
+    },
+
+    onInventoryUpdated: (data) => {
+      local.inventory = data.inventory || [];
+      renderInventory();
+    },
+
+    onPlayerEquipmentChanged: (data) => {
+      if (data.id === local.id) {
+        local.equipment = data.equipment || { weapon: null, head: null, body: null };
+        if (local.mesh) applyEquipment(local.mesh, local.equipment);
+        renderInventory(); // refresh which tile shows as "equipped"
+      } else {
+        const rp = remotePlayers.get(data.id);
+        if (rp) rp.setEquipment(data.equipment);
+      }
+    },
+
+    onPlayerXpGained: (data) => {
+      if (data.id !== local.id) return; // only the local player's HUD needs XP updates
+      local.xp = data.xp;
+      local.xpToNext = data.xpToNext;
+      local.level = data.level;
+      updateXpUI();
+    },
+
+    onPlayerLeveledUp: (data) => {
+      if (data.id === local.id) {
+        local.level = data.level;
+        local.hp = data.hp;
+        local.maxHp = data.maxHp;
+        updateXpUI();
+        setHealthBarHp(local.id, local.hp, local.maxHp);
+        chat.addSystemLine(`You reached level ${data.level}!`);
+      } else {
+        const rp = remotePlayers.get(data.id);
+        if (rp) {
+          rp.hp = data.hp;
+          rp.maxHp = data.maxHp;
+          setHealthBarHp(data.id, rp.hp, rp.maxHp);
+        }
+        chat.addSystemLine(`${data.name} reached level ${data.level}!`);
+      }
+    },
+
+    // Personal — only this player's quests advance, so no id check is
+    // needed the way remote-vs-local branches elsewhere in this file do.
+    onQuestProgress: (data) => {
+      local.quests[data.id] = { progress: data.progress, completed: data.completed };
+      renderQuestLog(); // matches renderInventory()'s always-refresh pattern, cheap DOM rebuild
+    },
+
+    // Broadcast to everyone (mirrors the level-up chat announcement above),
+    // so the whole server sees someone finish a quest.
+    onQuestCompleted: (data) => {
+      const who = data.id === local.id ? "You" : data.name;
+      chat.addSystemLine(`${who} completed the quest: ${data.questName}!`);
+    },
+
+    // Parties (server/parties.js) -- see the party panel functions above and
+    // network.js's comment on each of these events for what they mean.
+    onPartyInviteReceived: (data) => {
+      showPartyInvitePopup(data.inviterId, data.inviterName);
+    },
+
+    onPartyState: (data) => {
+      local.partyId = data.partyId;
+      local.partyRoster = data.roster || [];
+      if (partyOpen) renderPartyPanel();
+    },
+
+    onPartyLeft: () => {
+      local.partyId = null;
+      local.partyRoster = [];
+      chat.addSystemLine("You left the party.");
+      if (partyOpen) renderPartyPanel();
+    },
+
+    onPartyDisbanded: (data) => {
+      local.partyId = null;
+      local.partyRoster = [];
+      chat.addSystemLine(`Your party disbanded${data?.reason ? ` (${data.reason})` : ""}.`);
+      if (partyOpen) renderPartyPanel();
+    },
+
+    onPartyNotice: (data) => {
+      if (data?.message) chat.addSystemLine(data.message);
+    },
+
+    // Proximity voice chat (server/voiceProximity.js) -- see voice.js's
+    // handlePeerJoin/handlePeerLeave/handleSignal for the actual WebRTC
+    // plumbing this just forwards into.
+    onVoicePeerJoin: (data) => {
+      voice.handlePeerJoin(data.peerId, data.initiate);
+    },
+    onVoicePeerLeave: (data) => {
+      voice.handlePeerLeave(data.peerId);
+    },
+    onVoiceSignal: (data) => {
+      voice.handleSignal(data.fromId, data.data);
+    },
+    onPlayerMicState: (data) => {
+      if (data.id === local.id) return; // our own mic state is driven locally by updateMicToggle(), not this broadcast
+      setPlayerMicState(data.id, data.micOn);
+    },
+  }, character);
+}
+
+const loginScreen = initCharacterCreate(startGame);
+
+// ---- Party UI wiring --------------------------------------------------------------
+// Button/input handlers are wired once at module load (not per-connection,
+// unlike the socket event handlers inside startGame()) since they only ever
+// request something from the server through `net` -- same pattern as the
+// chat input's callback above.
+
+if (partyInviteBtnEl && partyInviteInputEl) {
+  const sendInvite = () => {
+    const name = partyInviteInputEl.value.trim();
+    if (!name || !net) return;
+    net.sendPartyInvite(name);
+    partyInviteInputEl.value = "";
+  };
+  partyInviteBtnEl.addEventListener("click", sendInvite);
+  partyInviteInputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendInvite();
+  });
+}
+
+if (partyLeaveBtnEl) {
+  partyLeaveBtnEl.addEventListener("click", () => net?.leaveParty());
+}
+
+if (partyDisbandBtnEl) {
+  partyDisbandBtnEl.addEventListener("click", () => net?.disbandParty());
+}
+
+if (partyInviteAcceptBtnEl) {
+  partyInviteAcceptBtnEl.addEventListener("click", () => {
+    net?.respondPartyInvite(true);
+    hidePartyInvitePopup();
+  });
+}
+
+if (partyInviteDeclineBtnEl) {
+  partyInviteDeclineBtnEl.addEventListener("click", () => {
+    net?.respondPartyInvite(false);
+    hidePartyInvitePopup();
+  });
+}
+
+if (micToggleBtnEl) {
+  micToggleBtnEl.addEventListener("click", () => {
+    micToggle.requested = true;
+  });
+}
 
 function spawnRemote(p) {
   const rp = new RemotePlayer(scene, p);
   remotePlayers.set(p.id, rp);
-  labelEls.set(p.id, makeLabel(p.name, false));
+  playerNames.set(p.id, p.name);
+  labelEls.set(p.id, makeLabel(p.name));
+  healthBarEls.set(p.id, makeHealthBar());
+  setHealthBarHp(p.id, rp.hp, rp.maxHp);
+  // A player who already had their mic on before we spawned them in (e.g.
+  // they were mid-session when we joined/reconnected) should show the icon
+  // immediately rather than only after their next toggle.
+  if (p.micOn) setPlayerMicState(p.id, true);
+}
+
+function spawnMob(m) {
+  const mob = new Mob(scene, m);
+  mobs.set(m.id, mob);
+  labelEls.set(m.id, makeLabel(m.name, "mob"));
+  healthBarEls.set(m.id, makeHealthBar());
+  setHealthBarHp(m.id, mob.hp, mob.maxHp);
+}
+
+function despawnMob(id) {
+  const mob = mobs.get(id);
+  if (mob) {
+    mob.dispose(scene);
+    mobs.delete(id);
+  }
+  const label = labelEls.get(id);
+  if (label) {
+    label.remove();
+    labelEls.delete(id);
+  }
+  const bar = healthBarEls.get(id);
+  if (bar) {
+    bar.outer.remove();
+    healthBarEls.delete(id);
+  }
+}
+
+// Pickups have no name tag / health bar — just a mesh in the world.
+function spawnPickup(pk) {
+  pickups.set(pk.id, new Pickup(scene, pk));
+}
+
+function despawnPickup(id) {
+  const pickup = pickups.get(id);
+  if (pickup) {
+    pickup.dispose(scene);
+    pickups.delete(id);
+  }
 }
 
 // ---- Movement + camera update ----------------------------------------------------
@@ -132,11 +817,39 @@ const _forward = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _move = new THREE.Vector3();
 const _headPos = new THREE.Vector3();
+const _healthPos = new THREE.Vector3();
+const _dmgPos = new THREE.Vector3();
 const _screen = new THREE.Vector3();
 
-const WORLD_BOUNDS = 90;
+const WORLD_BOUNDS = 170; // must match server's WORLD_BOUNDS
+const FOREST_ZONE_Z = 90; // must match server's FOREST_ZONE_Z
 let lastSendAt = 0;
 let lastSent = { x: null, y: null, z: null, rotY: null };
+let currentZoneName = null; // last zone name shown in the HUD, so we only touch the DOM on change
+let currentTimeLabel = null; // last day/night label shown in the HUD, so we only touch the DOM on change
+
+/** Updates the "Meadow" / "Whispering Forest" HUD label from the local
+ * player's current z position. Purely cosmetic client-side zone detection —
+ * both areas share the same continuous world/network state. */
+function updateZoneLabel() {
+  if (!zoneLabelEl || !local.mesh) return;
+  const zoneName = local.mesh.position.z >= FOREST_ZONE_Z ? "Whispering Forest" : "Meadow";
+  if (zoneName === currentZoneName) return;
+  currentZoneName = zoneName;
+  zoneLabelEl.textContent = zoneName;
+  zoneLabelEl.classList.toggle("forest", zoneName === "Whispering Forest");
+}
+
+/** Updates the "Dawn"/"Day"/"Dusk"/"Night" HUD label from the day/night
+ * cycle's current phase. Purely cosmetic — the cycle itself is client-side
+ * and not synced across players, same as the meadow/forest zone label. */
+function updateTimeLabel(elapsedSeconds) {
+  if (!timeLabelEl) return;
+  const label = dayPeriodLabel(dayNightPhase(elapsedSeconds));
+  if (label === currentTimeLabel) return;
+  currentTimeLabel = label;
+  timeLabelEl.textContent = label;
+}
 
 function updateCameraOrbit(dt) {
   cameraState.azimuth += mouse.deltaAzimuth;
@@ -148,12 +861,16 @@ function updateCameraOrbit(dt) {
 }
 
 function updateLocalPlayer(dt) {
-  if (!local.mesh) return;
+  if (!local.mesh || !local.alive) return;
 
   const { azimuth, elevation, distance } = cameraState;
 
   _forward.set(-Math.sin(azimuth), 0, -Math.cos(azimuth));
-  _right.set(_forward.z, 0, -_forward.x);
+  // Camera-relative right vector: cross(forward, worldUp), which for our
+  // forward gives (-forward.z, 0, forward.x). The previous sign here was
+  // flipped, so pressing D/right strafed toward the camera's left (and
+  // vice versa) — this was the "left is right" movement bug.
+  _right.set(-_forward.z, 0, _forward.x);
 
   _move.set(0, 0, 0);
   if (keys.forward) _move.add(_forward);
@@ -161,8 +878,11 @@ function updateLocalPlayer(dt) {
   if (keys.right) _move.add(_right);
   if (keys.left) _move.sub(_right);
 
-  if (_move.lengthSq() > 0) {
-    _move.normalize().multiplyScalar(local.moveSpeed * dt);
+  const moving = _move.lengthSq() > 0;
+  const effectiveSpeed = local.moveSpeed * (keys.sprint ? SPRINT_MULTIPLIER : 1);
+
+  if (moving) {
+    _move.normalize().multiplyScalar(effectiveSpeed * dt);
     local.mesh.position.x = THREE.MathUtils.clamp(local.mesh.position.x + _move.x, -WORLD_BOUNDS, WORLD_BOUNDS);
     local.mesh.position.z = THREE.MathUtils.clamp(local.mesh.position.z + _move.z, -WORLD_BOUNDS, WORLD_BOUNDS);
 
@@ -171,6 +891,11 @@ function updateLocalPlayer(dt) {
     dr = Math.atan2(Math.sin(dr), Math.cos(dr));
     local.mesh.rotation.y += dr * Math.min(1, dt * 12);
   }
+
+  // Walk/run gait is purely speed-driven (see updateLocomotion in player.js),
+  // so sprinting just means feeding it a bigger number here — no separate
+  // "running" flag to track or send over the network.
+  updateLocomotion(local.mesh, dt, moving ? effectiveSpeed : 0);
 
   // Camera orbits around the player at head height.
   const eyeHeight = 1.5;
@@ -182,8 +907,61 @@ function updateLocalPlayer(dt) {
   camera.lookAt(local.mesh.position.x, local.mesh.position.y + eyeHeight, local.mesh.position.z);
 }
 
+/** Finds the nearest alive mob within attack range that's roughly in front of the player. */
+function findAttackTargetMobId() {
+  if (!local.mesh) return null;
+
+  const forwardX = Math.sin(local.mesh.rotation.y);
+  const forwardZ = Math.cos(local.mesh.rotation.y);
+
+  let bestId = null;
+  let bestDist = Infinity;
+
+  for (const [id, mob] of mobs) {
+    // Dead mobs are despawned immediately on "mobDied", so anything still in
+    // this map is alive — no extra alive-check needed here.
+    const dx = mob.mesh.position.x - local.mesh.position.x;
+    const dz = mob.mesh.position.z - local.mesh.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > MOB_ATTACK_RANGE || dist === 0) continue;
+
+    const dot = (dx / dist) * forwardX + (dz / dist) * forwardZ;
+    if (dot < MOB_ATTACK_FACING_DOT) continue;
+
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestId = id;
+    }
+  }
+
+  return bestId;
+}
+
+function updateLocalAttack(dt) {
+  if (local.attackCooldownRemaining > 0) {
+    local.attackCooldownRemaining = Math.max(0, local.attackCooldownRemaining - dt);
+  }
+
+  if (attackInput.requested) {
+    attackInput.requested = false;
+    if (local.mesh && local.alive && local.attackCooldownRemaining <= 0) {
+      triggerAttack(local.mesh);
+      local.attackCooldownRemaining = ATTACK_COOLDOWN;
+      net?.sendAttack(findAttackTargetMobId());
+    }
+  }
+
+  if (local.mesh) updateAttack(local.mesh, dt);
+
+  if (cooldownFillEl) {
+    const ready = local.attackCooldownRemaining <= 0;
+    cooldownFillEl.style.width = `${(1 - local.attackCooldownRemaining / ATTACK_COOLDOWN) * 100}%`;
+    cooldownFillEl.classList.toggle("ready", ready);
+  }
+}
+
 function maybeSendMove(now) {
-  if (!local.mesh || !net) return;
+  if (!local.mesh || !net || !local.alive) return;
   if (now - lastSendAt < 50) return; // ~20Hz cap
 
   const p = local.mesh.position;
@@ -201,6 +979,17 @@ function maybeSendMove(now) {
   }
 }
 
+function projectToScreen(div, worldPos) {
+  _screen.copy(worldPos).project(camera);
+  if (_screen.z > 1) {
+    div.style.display = "none";
+    return;
+  }
+  div.style.display = "block";
+  div.style.left = `${(_screen.x * 0.5 + 0.5) * window.innerWidth}px`;
+  div.style.top = `${(-_screen.y * 0.5 + 0.5) * window.innerHeight}px`;
+}
+
 function updateLabels() {
   for (const [id, div] of labelEls) {
     let worldPos;
@@ -208,19 +997,19 @@ function updateLabels() {
       worldPos = _headPos.copy(local.mesh.position);
       worldPos.y += 2.3;
     } else {
-      const rp = remotePlayers.get(id);
+      const rp = remotePlayers.get(id) || mobs.get(id);
       if (!rp) continue;
       worldPos = rp.headWorldPosition(_headPos);
     }
 
-    _screen.copy(worldPos).project(camera);
-    if (_screen.z > 1) {
-      div.style.display = "none";
-      continue;
+    projectToScreen(div, worldPos);
+
+    const bar = healthBarEls.get(id);
+    if (bar) {
+      const barPos = _healthPos.copy(worldPos);
+      barPos.y += 0.32; // sit just above the name tag
+      projectToScreen(bar.outer, barPos);
     }
-    div.style.display = "block";
-    div.style.left = `${(_screen.x * 0.5 + 0.5) * window.innerWidth}px`;
-    div.style.top = `${(-_screen.y * 0.5 + 0.5) * window.innerHeight}px`;
   }
 }
 
@@ -234,11 +1023,33 @@ function animate() {
 
   updateCameraOrbit(dt);
   updateLocalPlayer(dt);
+  updateLocalAttack(dt);
+  updateInventoryToggle();
+  updateQuestLogToggle();
+  updatePartyToggle();
+  updateMicToggle();
+  updateZoneLabel();
+  if (partyOpen) renderPartyPanel(); // keeps roster hp bars live, see renderPartyPanel()'s comment
+
+  const dayNight = updateDayNight(scene, sky, sun, hemi, clock.elapsedTime);
+  updateTimeLabel(clock.elapsedTime);
+  // Torches burn brighter relative to the ambient dark at night, and dimmer
+  // (barely noticeable) in full daylight — baseIntensity feeds straight into
+  // torchFlicker()'s existing dual-sine wobble, so the flicker itself is
+  // unaffected, only its average brightness.
+  const torchBase = THREE.MathUtils.lerp(1.0, 1.9, dayNight.nightFactor);
+  for (const torch of torches) {
+    torch.light.intensity = torchFlicker(clock.elapsedTime, torch.seed, torchBase);
+  }
+  updateRain(rain, dt, clock.elapsedTime, local.mesh?.position.x ?? 0, local.mesh?.position.z ?? 0);
 
   for (const rp of remotePlayers.values()) rp.update(dt);
+  for (const mob of mobs.values()) mob.update(dt);
+  for (const pickup of pickups.values()) pickup.update(dt);
 
   maybeSendMove(performance.now());
   updateLabels();
+  damageNumbers.update(camera, window.innerWidth, window.innerHeight);
 
   renderer.render(scene, camera);
 }

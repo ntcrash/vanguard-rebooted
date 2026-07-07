@@ -1,6 +1,9 @@
 node_modules/
 dist/
+server/data/
 .DS_Store
 *.log
 .env
 .env.local
+.git-credentials
+*.zip
