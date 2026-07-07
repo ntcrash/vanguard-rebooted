@@ -2,21 +2,17 @@
 
 All notable changes to this project are documented in this file.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Versioning loosely follows [Semantic Versioning](https://semver.org/); each
+version is cut from a Gitflow `release/*` branch merged into `main` and
+tagged there.
 
 ## [Unreleased]
 
-### Fixed
+Nothing queued up right now — add new ideas to [ROADMAP.md](./ROADMAP.md).
 
-- Mouse look was inverted vertically: dragging the pointer up swung the
-  orbit camera up and tilted the view down at the player, and dragging down
-  did the opposite — backwards from the conventional non-inverted feel used
-  by most first/third-person games. The dx/dy-to-camera-delta math was
-  pulled out of the `mousemove`/`touchmove` handlers in `client/src/input.js`
-  into a small pure, exported `mouseDeltaToLook(dx, dy, sensitivity)` helper
-  (mirrors the rest of the codebase's "extract the math into a pure,
-  testable function" pattern) with the vertical sign flipped; horizontal
-  (azimuth) look is unchanged. Applies to both mouse-drag and the mobile
-  single-finger camera-drag, since both now go through the same helper.
+## [0.6.0] - 2026-07-06
+
+The "Later / stretch ideas" section of `ROADMAP.md`, now fully shipped.
 
 ### Added
 
@@ -63,8 +59,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   client glue itself can't be runtime-tested in this sandbox (no real
   browser), the same limitation already noted for the day/night cycle's
   GLSL shader and the touch-controls' real touch events — kept as small and
-  boring as possible to minimize that untested surface. This was the last
-  item in `ROADMAP.md`.
+  boring as possible to minimize that untested surface.
 - Guilds/parties: a lightweight grouping system so a handful of players can
   band together. `server/parties.js` holds the pure, unit-tested membership
   math (`createParty`/`addPartyMember`/`removePartyMember`, capped at
@@ -129,9 +124,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   contaminating each other's quests — all passed; also spot-checked HTML
   tag balance and CSS brace balance after the markup/stylesheet edits,
   same as the mobile-touch-controls run, since there's no real browser to
-  load the page in here. This was the last item in the "Later / stretch
-  ideas" section of `ROADMAP.md`, alongside Voice chat and Guilds/parties
-  (both of which remain).
+  load the page in here.
 - Day/night cycle and weather: `client/src/world.js` gained a client-side,
   clock-driven day/night loop (`DAY_CYCLE_SECONDS` = 300s = one full loop) that
   smoothly cross-fades the sky dome's gradient colors, the sun
@@ -164,8 +157,27 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   objects to confirm sun/hemi intensity, fog color, sky shader uniforms, rain
   visibility, and rain-follows-player positioning all update as expected, and
   that the sky mesh, rain particle cloud, and both torch lights land in the
-  scene graph. This was one item from the "Later / stretch ideas" section of
-  `ROADMAP.md` (Voice chat, Guilds/parties, and Simple quest system remain).
+  scene graph.
+
+### Fixed
+
+- Mouse look was inverted vertically: dragging the pointer up swung the
+  orbit camera up and tilted the view down at the player, and dragging down
+  did the opposite — backwards from the conventional non-inverted feel used
+  by most first/third-person games. The dx/dy-to-camera-delta math was
+  pulled out of the `mousemove`/`touchmove` handlers in `client/src/input.js`
+  into a small pure, exported `mouseDeltaToLook(dx, dy, sensitivity)` helper
+  (mirrors the rest of the codebase's "extract the math into a pure,
+  testable function" pattern) with the vertical sign flipped; horizontal
+  (azimuth) look is unchanged. Applies to both mouse-drag and the mobile
+  single-finger camera-drag, since both now go through the same helper.
+
+## [0.5.0] - 2026-07-06
+
+The "Polish & deployment" roadmap section.
+
+### Added
+
 - Enhanced world/rendering graphics: a gradient sky dome (`buildSky()` in
   `client/src/world.js`, a large `BackSide` sphere with a vertical-gradient
   `ShaderMaterial`) replaces the previous flat `scene.background` color, so
@@ -195,9 +207,7 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   both torch point lights, and the grass `InstancedMesh` (with the right
   instance count) actually end up in the scene graph, and confirmed
   `PCFSoftShadowMap`/`ACESFilmicToneMapping`/`SRGBColorSpace` all exist as
-  constants in the installed three r164. This was the only item in v0.5
-  "Polish & deployment", so that section heading was removed from
-  `ROADMAP.md` along with the item.
+  constants in the installed three r164.
 - Mobile/touch controls: a virtual joystick (`#touch-joystick-base`/`-knob`)
   drives movement by converting finger offset from the base's center into
   the same `forward`/`back`/`left`/`right` booleans WASD already produces
@@ -274,10 +284,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the weapon arm while a swing is in progress, so attacking while moving
   doesn't look broken. Equippable gear (weapon/helmet/chestplate) still
   layers on top unchanged. Torso proportions were shortened/raised slightly
-  to make room for the new visible legs. Server-side movement/speed
-  validation is unaffected (still absent — see the "basic anti-cheat" item in
-  `ROADMAP.md`, which will need to account for the new sprint speed cap when
-  it's built).
+  to make room for the new visible legs.
+
+## [0.4.0] - 2026-07-06
+
+The "World & persistence" roadmap section.
+
+### Added
+
 - Basic account/login instead of a random guest name each session: the login
   screen now collects a username *and* password, backed by a new
   dependency-free `server/accountStore.js` (Node's built-in `crypto.scrypt`
@@ -301,8 +315,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reconnect. Storage is a deliberately tiny "database" — a single JSON file
   (`server/data/players.json`, gitignored, written atomically via a
   temp-file-then-rename in `server/playerStore.js`) keyed by the player's
-  chosen character name, since there's no separate account/login system yet
-  (next roadmap item). New names still get the usual starter kit; a name
+  chosen character name (an account/login system arrived one step later, in
+  this same release). New names still get the usual starter kit; a name
   that's been seen before loads its saved record instead, with position
   re-clamped to the current `WORLD_BOUNDS` in case it's changed since the
   save. Saved on every disconnect, plus a 60s safety-net autosave
@@ -325,6 +339,12 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   directly instead of indexing into a shared `MOB_NAMES` array. New forest
   item pickups include a fresh curio item, Moonpetal (no gameplay effect yet),
   alongside more health draughts/gold coins.
+
+## [0.3.0] - 2026-07-06
+
+The "Progression & items" roadmap section.
+
+### Added
 
 - Basic XP/leveling tied to defeating mobs: players now have `level`, `xp`,
   and `xpToNext` fields (`server/index.js`), starting at level 1. Defeating a
@@ -364,6 +384,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `inventoryUpdated` event pushes the looting player's updated inventory to
   their own client, and a broadcast `itemPickedUp`/`pickupRespawned` pair
   keeps everyone's view of the world in sync and posts a "picked up" chat line.
+
+## [0.2.0] - 2026-07-06
+
+The "Core gameplay loop" roadmap section: turning the initial scaffold into
+an actual playable game with combat, mobs, and a real inventory/character
+identity.
+
+### Added
+
 - Player inventory: each player now has a server-authoritative inventory
   (`inventory` array on the player object in `server/index.js`, capped at
   `MAX_INVENTORY_SLOTS` = 20, with items stacking by id via
@@ -375,7 +404,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   slots — filled slots show an icon and stack count, empty ones are dashed
   placeholders. No new network events were needed: the inventory rides along
   on the existing `init` payload as part of the player's own state.
-- Character creation screen: before joining, players now pick a display name and a color from a palette on a pre-game overlay (`client/src/characterCreate.js`, wired into `client/index.html` as `#login-screen`). The choice is sent to the server as socket.io auth and replaces the old behavior of auto-assigning a random name/color on connect. The server validates and sanitizes both fields (`sanitizeChosenName`/`sanitizeChosenColor` in `server/index.js`) and falls back to a random guest name/color if the input is missing or invalid, so older or malformed clients still work.
+- Character creation screen: before joining, players now pick a display name
+  and a color from a palette on a pre-game overlay
+  (`client/src/characterCreate.js`, wired into `client/index.html` as
+  `#login-screen`). The choice is sent to the server as socket.io auth and
+  replaces the old behavior of auto-assigning a random name/color on
+  connect. The server validates and sanitizes both fields
+  (`sanitizeChosenName`/`sanitizeChosenColor` in `server/index.js`) and
+  falls back to a random guest name/color if the input is missing or
+  invalid, so older or malformed clients still work.
 - Respawn handling for mobs and players:
   - Defeated mobs return to life at their home spawn point 15 seconds after
     dying (`respawnMob()` in `server/index.js`), broadcast as `mobRespawned`.
@@ -418,6 +455,11 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Attack events are synced over Socket.io (`attack` / `playerAttacked`) so
   other connected players see your swing animation in real time.
 - Server-side cooldown enforcement on the `attack` event to prevent spam/cheating.
+
+### Changed
+
+- Repo housekeeping: IDE config and lockfiles are now tracked in git, and
+  `.gitignore` was extended to exclude credentials and build archives.
 
 ### Fixed
 

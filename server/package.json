@@ -1,6 +1,6 @@
 {
   "name": "vanguard-server",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "Authoritative-ish realtime server for Vanguard Rebooted (WoW-style 3D multiplayer prototype)",
   "main": "index.js",
   "type": "module",
