@@ -5,7 +5,8 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { loadPlayerRecord, savePlayerRecord, savePlayerRecords } from "./playerStore.js";
-import { resolveLogin } from "./accountStore.js";
+import { resolveLogin, normalizeAccountKey } from "./accountStore.js";
+import { MAX_CHARACTERS_PER_ACCOUNT, listCharacters, characterNameTaken, addCharacter, ensureMigratedAccount } from "./characterStore.js";
 import { QUEST_DEFS, initQuestState, advanceKillQuests, advanceCollectQuests } from "./quests.js";
 import { CHARACTER_CLASSES, DEFAULT_CLASS_ID, sanitizeClassId, classMaxHp, classDamage } from "./classes.js";
 import { spellForClass, isSpellUnlocked, isSpellOffCooldown, computeSpellDamage } from "./spells.js";
@@ -775,144 +776,239 @@ io.use((socket, next) => {
 });
 
 io.on("connection", (socket) => {
-  // Username/color chosen on the client's login screen (see
-  // client/src/characterCreate.js) — the username is already verified
-  // against accountStore.js by the io.use() middleware above by this point,
-  // so it's always a legitimate account name, never a random guest id.
-  const auth = socket.handshake.auth || {};
+  // Username chosen on the client's login screen (see
+  // client/src/characterCreate.js) — already verified against
+  // accountStore.js by the io.use() middleware above by this point, so it's
+  // always a legitimate account name, never a random guest id.
   const chosenName = socket.data.accountName;
-  const saved = loadPlayerRecord(chosenName);
+  const accountKey = normalizeAccountKey(chosenName);
 
-  // Class is chosen once, the first time an account is created, and then
-  // locked in forever after (see server/classes.js) — a returning player's
-  // saved class always wins over whatever the client's auth payload sends,
-  // the same way their name/password can't be changed by just typing
-  // something different on the login screen. A saved record predating this
-  // feature (no characterClass field yet) falls back to whatever the client
-  // requested (or DEFAULT_CLASS_ID) rather than losing its already-saved HP.
-  const requestedClass = sanitizeClassId(auth.characterClass) || DEFAULT_CLASS_ID;
-  const characterClass = (saved && sanitizeClassId(saved.characterClass)) || requestedClass;
-  const baseMaxHp = classMaxHp(characterClass, 100);
+  // Set once this socket actually joins the world as a chosen character (see
+  // joinWorldAsCharacter() below) — stays null while the client is still on
+  // the post-login character-select screen, so every other handler on this
+  // socket (including disconnect) can cheaply no-op until a character is
+  // actually in play, the same guard style every game-action handler below
+  // already uses for "player not found".
+  let activePlayer = null;
 
-  const player = {
-    id: socket.id,
-    name: chosenName,
-    color: sanitizeChosenColor(auth.color) || randomColor(),
-    characterClass,
-    // This class's single spell (see server/spells.js) -- sent to the owning
-    // client via "init" so its HUD knows the spell's name/icon/level-gate/
-    // cooldown without a second lookup table duplicated client-side the way
-    // characterCreate.js's CLASSES array already is. `lastSpellAt` is a
-    // transient cooldown clock, not persisted (same treatment as
-    // `lastAttackAt` below).
-    spell: spellForClass(characterClass),
-    lastSpellAt: 0,
-    x: (Math.random() - 0.5) * 20,
-    y: 0,
-    z: (Math.random() - 0.5) * 20,
-    rotY: 0,
-    hp: baseMaxHp,
-    maxHp: baseMaxHp,
-    alive: true,
-    lastAttackAt: 0,
-    lastMoveAt: Date.now(), // anti-cheat clock -- see MAX_MOVE_SPEED above
-    level: 1,
-    xp: 0,
-    xpToNext: xpToNextLevel(1),
-    inventory: [],
-    // Equippable gear currently worn, one item id (or null) per slot. Drives
-    // the visible character model on every client via "playerEquipmentChanged".
-    equipment: { weapon: null, head: null, body: null },
-    // Per-quest { progress, completed } state, one entry per server/quests.js
-    // QUEST_DEFS id — overwritten just below once `saved` is known, so a
-    // returning player's actual progress (not a blank slate) is used.
-    quests: initQuestState(null),
-    // Store NPC (server/store.js) -- which class spellbooks this account has
-    // ever bought, keyed by classId ("warrior" etc). A player can only ever
-    // buy their own class's spellbook, so in practice this holds at most one
-    // key, but it's kept as a map (not a single bool) so a class switch in a
-    // future roadmap item wouldn't silently re-grant an already-paid-for
-    // unlock. Owning your class's spellbook here lets castSpell's handler
-    // below bypass spells.js's normal minLevel gate for that spell entirely.
-    ownedSpellbooks: {},
-    // Proximity voice chat (see "Proximity voice chat" above) -- purely a UI
-    // hint broadcast to everyone (like an equipment change) so a nearby
-    // player's nameplate can show a mic icon; never persisted, never
-    // affects who's actually WebRTC-paired (that's voicePairs, driven
-    // entirely by position).
-    micOn: false,
-  };
-
-  if (saved) {
-    // Returning player (matched by chosen name) — restore their progress
-    // instead of starting fresh. Always join alive at a valid HP regardless
-    // of what was saved (e.g. mid-respawn-timer when they disconnected), and
-    // clamp position in case WORLD_BOUNDS has shrunk since they last saved.
-    player.level = typeof saved.level === "number" ? saved.level : player.level;
-    player.xp = typeof saved.xp === "number" ? saved.xp : player.xp;
-    player.xpToNext = typeof saved.xpToNext === "number" ? saved.xpToNext : xpToNextLevel(player.level);
-    player.maxHp = typeof saved.maxHp === "number" ? saved.maxHp : player.maxHp;
-    player.hp = clamp(typeof saved.hp === "number" ? saved.hp : player.maxHp, 1, player.maxHp);
-    player.inventory = Array.isArray(saved.inventory) ? saved.inventory : player.inventory;
-    player.equipment = saved.equipment && typeof saved.equipment === "object"
-      ? { weapon: null, head: null, body: null, ...saved.equipment }
-      : player.equipment;
-    if (typeof saved.x === "number") player.x = clamp(saved.x, -WORLD_BOUNDS, WORLD_BOUNDS);
-    if (typeof saved.z === "number") player.z = clamp(saved.z, -WORLD_BOUNDS, WORLD_BOUNDS);
-    if (typeof saved.rotY === "number") player.rotY = saved.rotY;
-    // initQuestState() overlays saved.quests onto a fresh state built from
-    // the current QUEST_DEFS, so a quest added after this player last saved
-    // still shows up (at 0 progress) instead of being missing entirely.
-    player.quests = initQuestState(saved.quests);
-    player.ownedSpellbooks =
-      saved.ownedSpellbooks && typeof saved.ownedSpellbooks === "object" ? saved.ownedSpellbooks : player.ownedSpellbooks;
-    console.log(`[restore] ${player.name} restored (level ${player.level}, ${player.inventory.length} item stack(s))`);
-  } else {
-    // First time we've seen this name — starter kit so the inventory panel
-    // has something to show before item pickups (a later roadmap item)
-    // exist in the world.
-    addItemToInventory(player, "rusty-sword", 1);
-    addItemToInventory(player, "health-draught", 3);
+  // ---- Multi-character accounts --------------------------------------------
+  // An account used to *be* exactly one character (its own display name
+  // doubled as the playerStore.js save key) — logging in joined the world
+  // immediately. Now an account owns a roster of characters
+  // (server/characterStore.js) and must pick or create one first. An account
+  // that predates this feature has no roster yet; if it already has a
+  // legacy single-character save under its own name, migrate that save into
+  // a one-character roster (preserving it exactly) rather than presenting it
+  // with an empty "create your first character" screen it never asked for.
+  let characters = listCharacters(accountKey);
+  if (characters.length === 0) {
+    const legacySave = loadPlayerRecord(chosenName);
+    if (legacySave) {
+      characters = ensureMigratedAccount(accountKey, chosenName, sanitizeClassId(legacySave.characterClass) || DEFAULT_CLASS_ID);
+      console.log(`[account] migrated legacy single-character account "${chosenName}" to the multi-character roster`);
+    }
   }
-  players.set(socket.id, player);
 
-  if (socket.data.newAccount) {
-    console.log(`[account] new account created: ${player.name}`);
-  }
-  console.log(`[join] ${player.name} (${socket.id}) — ${players.size} online`);
-
-  // Send the new player their own info + the current world state. Includes
-  // `newAccount` so the client can show a one-time "account created" hint
-  // rather than making a returning player think they created a fresh account
-  // every login.
-  socket.emit("init", {
-    id: socket.id,
-    self: player,
+  // Tells the client which characters this account can play (empty for a
+  // genuinely brand-new account, which only ever sees "create a character").
+  // `level` is looked up from each character's own playerStore.js save (1 if
+  // that character has never actually logged in and saved yet) purely for
+  // display on the character-select screen.
+  socket.emit("accountReady", {
+    accountName: chosenName,
     newAccount: !!socket.data.newAccount,
-    players: Array.from(players.values()),
-    mobs: mobsSnapshot(),
-    pickups: pickupsSnapshot(),
-    // Static quest definitions (name/description/target count) — sent once
-    // here rather than on every progress update, since they never change per
-    // player. player.quests (part of `self` above) carries this player's
-    // actual per-quest progress against them.
-    questDefs: QUEST_DEFS,
-    // Store NPC (server/store.js) -- static catalog + the merchant's world
-    // position, sent once here the same way questDefs is (never changes per
-    // player; player.ownedSpellbooks, part of `self` above, carries this
-    // player's own purchase state against it).
-    storeCatalog: STORE_CATALOG,
-    storeNpc: { name: STORE_NPC_NAME, x: STORE_NPC_POSITION.x, z: STORE_NPC_POSITION.z },
-    // Quest NPC (server/questNpc.js) -- just a name + world position, sent
-    // once here the same way storeNpc is. No per-player state of its own to
-    // carry (see questNpc.js's module comment: quests still auto-track/
-    // auto-grant regardless of this NPC), so unlike storeNpc there's no
-    // catalog/ownership data alongside it.
-    questNpc: { name: QUEST_NPC_NAME, x: QUEST_NPC_POSITION.x, z: QUEST_NPC_POSITION.z },
+    characters: characters.map((c) => ({
+      name: c.name,
+      characterClass: c.characterClass,
+      color: c.color,
+      level: (loadPlayerRecord(c.name) || {}).level || 1,
+    })),
   });
 
-  // Tell everyone else a new player arrived.
-  socket.broadcast.emit("playerJoined", player);
+  /** Actually spawns `character` ({ name, characterClass, color }) into the
+   * world for this socket — everything that used to happen unconditionally
+   * right on connection now happens here instead, once, after the client has
+   * either picked an existing character (`selectCharacter`) or successfully
+   * created a new one (`createCharacter`). */
+  function joinWorldAsCharacter(character) {
+    const saved = loadPlayerRecord(character.name);
+
+    // A returning character's saved class always wins over the roster
+    // entry's class (both should already agree — a class can't be changed
+    // after creation — but the playerStore.js save has been the persisted
+    // authority since before multi-character accounts existed, so it stays
+    // the tiebreak). A saved record predating the characterClass field falls
+    // back to the roster's class (or DEFAULT_CLASS_ID) rather than losing
+    // its already-saved HP.
+    const characterClass =
+      (saved && sanitizeClassId(saved.characterClass)) || sanitizeClassId(character.characterClass) || DEFAULT_CLASS_ID;
+    const baseMaxHp = classMaxHp(characterClass, 100);
+
+    const player = {
+      id: socket.id,
+      name: character.name,
+      color: sanitizeChosenColor(character.color) || randomColor(),
+      characterClass,
+      // This class's single spell (see server/spells.js) -- sent to the owning
+      // client via "init" so its HUD knows the spell's name/icon/level-gate/
+      // cooldown without a second lookup table duplicated client-side the way
+      // characterCreate.js's CLASSES array already is. `lastSpellAt` is a
+      // transient cooldown clock, not persisted (same treatment as
+      // `lastAttackAt` below).
+      spell: spellForClass(characterClass),
+      lastSpellAt: 0,
+      x: (Math.random() - 0.5) * 20,
+      y: 0,
+      z: (Math.random() - 0.5) * 20,
+      rotY: 0,
+      hp: baseMaxHp,
+      maxHp: baseMaxHp,
+      alive: true,
+      lastAttackAt: 0,
+      lastMoveAt: Date.now(), // anti-cheat clock -- see MAX_MOVE_SPEED above
+      level: 1,
+      xp: 0,
+      xpToNext: xpToNextLevel(1),
+      inventory: [],
+      // Equippable gear currently worn, one item id (or null) per slot. Drives
+      // the visible character model on every client via "playerEquipmentChanged".
+      equipment: { weapon: null, head: null, body: null },
+      // Per-quest { progress, completed } state, one entry per server/quests.js
+      // QUEST_DEFS id — overwritten just below once `saved` is known, so a
+      // returning player's actual progress (not a blank slate) is used.
+      quests: initQuestState(null),
+      // Store NPC (server/store.js) -- which class spellbooks this account has
+      // ever bought, keyed by classId ("warrior" etc). A player can only ever
+      // buy their own class's spellbook, so in practice this holds at most one
+      // key, but it's kept as a map (not a single bool) so a class switch in a
+      // future roadmap item wouldn't silently re-grant an already-paid-for
+      // unlock. Owning your class's spellbook here lets castSpell's handler
+      // below bypass spells.js's normal minLevel gate for that spell entirely.
+      ownedSpellbooks: {},
+      // Proximity voice chat (see "Proximity voice chat" above) -- purely a UI
+      // hint broadcast to everyone (like an equipment change) so a nearby
+      // player's nameplate can show a mic icon; never persisted, never
+      // affects who's actually WebRTC-paired (that's voicePairs, driven
+      // entirely by position).
+      micOn: false,
+    };
+
+    if (saved) {
+      // Returning character (matched by name) — restore their progress
+      // instead of starting fresh. Always join alive at a valid HP regardless
+      // of what was saved (e.g. mid-respawn-timer when they disconnected), and
+      // clamp position in case WORLD_BOUNDS has shrunk since they last saved.
+      player.level = typeof saved.level === "number" ? saved.level : player.level;
+      player.xp = typeof saved.xp === "number" ? saved.xp : player.xp;
+      player.xpToNext = typeof saved.xpToNext === "number" ? saved.xpToNext : xpToNextLevel(player.level);
+      player.maxHp = typeof saved.maxHp === "number" ? saved.maxHp : player.maxHp;
+      player.hp = clamp(typeof saved.hp === "number" ? saved.hp : player.maxHp, 1, player.maxHp);
+      player.inventory = Array.isArray(saved.inventory) ? saved.inventory : player.inventory;
+      player.equipment = saved.equipment && typeof saved.equipment === "object"
+        ? { weapon: null, head: null, body: null, ...saved.equipment }
+        : player.equipment;
+      if (typeof saved.x === "number") player.x = clamp(saved.x, -WORLD_BOUNDS, WORLD_BOUNDS);
+      if (typeof saved.z === "number") player.z = clamp(saved.z, -WORLD_BOUNDS, WORLD_BOUNDS);
+      if (typeof saved.rotY === "number") player.rotY = saved.rotY;
+      // initQuestState() overlays saved.quests onto a fresh state built from
+      // the current QUEST_DEFS, so a quest added after this player last saved
+      // still shows up (at 0 progress) instead of being missing entirely.
+      player.quests = initQuestState(saved.quests);
+      player.ownedSpellbooks =
+        saved.ownedSpellbooks && typeof saved.ownedSpellbooks === "object" ? saved.ownedSpellbooks : player.ownedSpellbooks;
+      console.log(`[restore] ${player.name} restored (level ${player.level}, ${player.inventory.length} item stack(s))`);
+    } else {
+      // First time this character has ever joined — starter kit so the
+      // inventory panel has something to show before item pickups exist.
+      addItemToInventory(player, "rusty-sword", 1);
+      addItemToInventory(player, "health-draught", 3);
+    }
+    players.set(socket.id, player);
+    activePlayer = player;
+
+    console.log(`[join] ${player.name} (${socket.id}) — ${players.size} online`);
+
+    // Send the new player their own info + the current world state. Includes
+    // `newAccount` so the client can show a one-time "account created" hint
+    // rather than making a returning player think they created a fresh account
+    // every login.
+    socket.emit("init", {
+      id: socket.id,
+      self: player,
+      newAccount: !!socket.data.newAccount,
+      players: Array.from(players.values()),
+      mobs: mobsSnapshot(),
+      pickups: pickupsSnapshot(),
+      // Static quest definitions (name/description/target count) — sent once
+      // here rather than on every progress update, since they never change per
+      // player. player.quests (part of `self` above) carries this player's
+      // actual per-quest progress against them.
+      questDefs: QUEST_DEFS,
+      // Store NPC (server/store.js) -- static catalog + the merchant's world
+      // position, sent once here the same way questDefs is (never changes per
+      // player; player.ownedSpellbooks, part of `self` above, carries this
+      // player's own purchase state against it).
+      storeCatalog: STORE_CATALOG,
+      storeNpc: { name: STORE_NPC_NAME, x: STORE_NPC_POSITION.x, z: STORE_NPC_POSITION.z },
+      // Quest NPC (server/questNpc.js) -- just a name + world position, sent
+      // once here the same way storeNpc is. No per-player state of its own to
+      // carry (see questNpc.js's module comment: quests still auto-track/
+      // auto-grant regardless of this NPC), so unlike storeNpc there's no
+      // catalog/ownership data alongside it.
+      questNpc: { name: QUEST_NPC_NAME, x: QUEST_NPC_POSITION.x, z: QUEST_NPC_POSITION.z },
+    });
+
+    // Tell everyone else a new player arrived.
+    socket.broadcast.emit("playerJoined", player);
+  }
+
+  // ---- Character select / creation (see "Multi-character accounts" above) --
+  // Both handlers silently no-op on a socket that's already joined (a
+  // double-submit from a slow UI shouldn't spawn a second player object for
+  // the same socket) — same defensive posture the rest of this file's
+  // handlers already use.
+  socket.on("createCharacter", (data) => {
+    if (activePlayer) return;
+    const name = sanitizeChosenName(data && data.name);
+    if (!name) {
+      socket.emit("characterActionRejected", {
+        reason: "Enter a character name: 1-20 characters (letters, numbers, spaces, - or _).",
+      });
+      return;
+    }
+    const characterClass = sanitizeClassId(data && data.characterClass) || DEFAULT_CLASS_ID;
+    const color = sanitizeChosenColor(data && data.color); // null falls back to randomColor() at join time
+
+    if (listCharacters(accountKey).length >= MAX_CHARACTERS_PER_ACCOUNT) {
+      socket.emit("characterActionRejected", {
+        reason: `An account can have at most ${MAX_CHARACTERS_PER_ACCOUNT} characters.`,
+      });
+      return;
+    }
+    if (characterNameTaken(name)) {
+      socket.emit("characterActionRejected", { reason: `"${name}" is already taken.` });
+      return;
+    }
+
+    const result = addCharacter(accountKey, { name, characterClass, color });
+    if (!result.ok) {
+      socket.emit("characterActionRejected", { reason: result.reason || "Could not create that character." });
+      return;
+    }
+    console.log(`[account] "${chosenName}" created character "${name}" (${characterClass})`);
+    joinWorldAsCharacter(result.character);
+  });
+
+  socket.on("selectCharacter", (data) => {
+    if (activePlayer) return;
+    const name = data && typeof data.name === "string" ? data.name : "";
+    const match = listCharacters(accountKey).find((c) => c.name.toLowerCase() === name.toLowerCase());
+    if (!match) {
+      socket.emit("characterActionRejected", { reason: "Unknown character." });
+      return;
+    }
+    joinWorldAsCharacter(match);
+  });
 
   socket.on("move", (data) => {
     const p = players.get(socket.id);
@@ -1305,13 +1401,18 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    savePlayerRecord(player.name, playerSaveRecord(player));
+    // A socket that disconnected while still on the login/character-select
+    // screen never actually joined the world (activePlayer stays null — see
+    // joinWorldAsCharacter above) — nothing was ever added to `players`, so
+    // there's nothing to save or announce as departed.
+    if (!activePlayer) return;
+    savePlayerRecord(activePlayer.name, playerSaveRecord(activePlayer));
     removePlayerFromParty(socket.id);
     pendingPartyInvites.delete(socket.id);
     dropVoicePairsFor(socket.id);
     players.delete(socket.id);
     io.emit("playerLeft", { id: socket.id });
-    console.log(`[leave] ${player.name} (${socket.id}) — ${players.size} online`);
+    console.log(`[leave] ${activePlayer.name} (${socket.id}) — ${players.size} online`);
   });
 });
 

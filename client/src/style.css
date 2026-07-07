@@ -947,12 +947,6 @@ html, body {
   line-height: 1.4;
 }
 
-#color-swatches {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .color-swatch {
   width: 30px;
   height: 30px;
@@ -965,12 +959,6 @@ html, body {
 .color-swatch.selected {
   border-color: #fff;
   box-shadow: 0 0 0 2px #7ee0ff;
-}
-
-#class-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .class-option {
@@ -1009,4 +997,163 @@ html, body {
 
 #enter-world-btn:hover {
   background: #a2ebff;
+}
+
+/* Multi-character accounts -- character-select screen, shown after login
+   and before the game itself. Mirrors #login-screen/#login-panel's overlay
+   treatment closely (same z-index, since the two never show at once -- the
+   character-select screen only ever appears after the login screen has
+   already hidden itself). */
+#character-select-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 10, 14, 0.78);
+  backdrop-filter: blur(2px);
+  z-index: 10;
+}
+
+#character-select-screen.hidden {
+  display: none;
+}
+
+#character-select-panel {
+  width: 340px;
+  max-height: 80vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px 26px;
+  background: rgba(14, 20, 26, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color: #e8f0f5;
+}
+
+#character-select-panel h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+#character-select-panel .subtitle {
+  margin: 0 0 8px;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+#character-select-panel label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+  margin-top: 6px;
+}
+
+#character-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.character-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #e8f0f5;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.character-tile:hover {
+  background: rgba(126, 224, 255, 0.16);
+  border-color: #7ee0ff;
+}
+
+.character-tile-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.character-tile-label {
+  flex: 1;
+}
+
+#character-name-input {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 8px 10px;
+  color: #fff;
+  font-size: 14px;
+  outline: none;
+}
+
+#character-name-input:focus {
+  border-color: #7ee0ff;
+}
+
+#character-color-swatches,
+#character-class-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#character-create-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+#character-create-confirm-btn,
+#character-create-new-btn {
+  padding: 10px 14px;
+  background: #7ee0ff;
+  border: none;
+  border-radius: 4px;
+  color: #06222c;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+#character-create-confirm-btn:hover,
+#character-create-new-btn:hover {
+  background: #a2ebff;
+}
+
+#character-create-new-btn {
+  margin-top: 10px;
+}
+
+#character-create-cancel-btn {
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: #e8f0f5;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+#character-create-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+#character-select-error {
+  min-height: 16px;
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #ff9d8a;
 }

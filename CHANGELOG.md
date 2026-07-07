@@ -10,6 +10,54 @@ tagged there.
 
 ### Added
 
+- Multi-character accounts: an account (`server/accountStore.js`) can now own
+  up to 5 characters instead of always being exactly one. Logging in no
+  longer drops you straight into the world — the server answers with
+  `accountReady` (that account's character roster) and a new post-login
+  character-select screen lets you resume an existing character or create a
+  new one (name, color, and class — the same three choices the old
+  single-screen login used to gather up front). New `server/characterStore.js`
+  module tracks each account's roster (`server/data/characters.json`,
+  gitignored like every other save file) — character *names* are still
+  unique across the whole server, not just within one account, since
+  `server/playerStore.js`'s save file is keyed by character name alone.
+  `server/index.js`'s connection handler now only authenticates the account
+  on connect; the actual "spawn into the world" logic moved into a new
+  `joinWorldAsCharacter()`, triggered by a new `createCharacter`/
+  `selectCharacter` socket event pair (answered by either `init`, same as
+  before, or a new `characterActionRejected` if the name's taken, the
+  account's already at its 5-character cap, or the requested character
+  doesn't exist). An account created before this feature shipped is
+  migrated automatically and transparently the first time it logs in again:
+  if it has no roster yet but already has a legacy `playerStore.js` save
+  under its own name (the old 1:1 account-is-a-character scheme), that save
+  is turned into a one-character roster entry (`ensureMigratedAccount()`)
+  rather than presenting an empty "create your first character" screen to a
+  returning player. A reconnect mid-session (e.g. a network blip, not a
+  fresh login) transparently re-selects whichever character was already
+  active instead of bouncing the player back to the character-select screen.
+  New `client/src/characterSelect.js` (mirrors `characterCreate.js`'s
+  palette/class-picker patterns) drives the new screen; `characterCreate.js`
+  itself now only gathers name+password, with color/class moved to
+  character creation. Verified with a standalone Node script against
+  `server/characterStore.js` directly (20 checks: empty roster for an
+  unknown account, add/list round-trip, case-insensitive global name
+  uniqueness across different accounts, the 5-character cap and its
+  rejection message, migration both no-op-ing when a roster already exists
+  and correctly synthesizing one from a legacy name/class, and that
+  everything actually persists to disk) plus a full integration test booting
+  the real server and driving several real `socket.io-client` connections
+  through the entire flow — 29 checks: brand-new-account empty roster,
+  character creation and its starter kit, a reconnect showing the grown
+  roster, case-insensitive duplicate-name rejection, a second character on
+  the same account, `selectCharacter` correctly resuming (not recreating)
+  an existing character, an unknown-character rejection, filling the
+  5-character cap and the 6th being rejected, and — the key regression
+  check — a simulated legacy single-character account (a pre-existing
+  `accounts.json` entry plus a pre-existing `playerStore.js` save, no
+  roster) migrating on its next login into a one-character roster that
+  exactly preserves the old save's class/level/HP/position. All 49 checks
+  passed.
 - Desktop (Electron) client: `desktop/` wraps the exact same `client/` build
   as a native window instead of a browser tab — no new game logic, no second
   server-selection mechanism, just an alternate way to run the same client.
