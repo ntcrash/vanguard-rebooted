@@ -137,6 +137,27 @@ On a plain VPS, put Nginx (or Caddy) in front of the Node process:
    persistent volume from §3 is actually mounted where the app expects it,
    not just configured in the dashboard).
 
+## 7. Voice chat (WebRTC) behind restrictive networks
+
+Proximity voice chat (`client/src/voice.js`) uses a public STUN-only
+configuration (`stun:stun.l.google.com:19302`) to establish peer
+connections. STUN alone is enough for most home/office NATs, but players
+behind especially restrictive NATs or corporate firewalls that block direct
+peer-to-peer UDP may fail to connect audio to each other even though
+everything else in the game (movement, chat, combat) works fine over the
+existing Socket.io connection, since that's plain WebSocket/HTTP traffic and
+not affected by this at all.
+
+If that turns out to matter for your players, add a TURN server (which
+relays audio when a direct connection can't be established) to the
+`ICE_SERVERS` array in `client/src/voice.js` — e.g. a self-hosted
+[coturn](https://github.com/coturn/coturn) instance, or a managed TURN
+provider (Twilio, Cloudflare, Xirsys, and others all offer one). This is the
+only part of the voice chat feature that costs anything to run beyond your
+existing server/client hosting — signaling itself (who's near whom, and
+relaying the SDP/ICE handshake) is handled entirely by the existing
+Socket.io server at no extra infrastructure cost.
+
 ## Not covered yet
 
 - No CI/CD pipeline is set up in this repo — deploys are triggered manually

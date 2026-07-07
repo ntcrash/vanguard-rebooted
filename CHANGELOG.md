@@ -7,6 +7,51 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Proximity voice chat: players near each other can hear one another over a
+  live WebRTC audio connection, negotiated automatically as they walk into
+  and out of range — no manual "call" step. `server/voiceProximity.js` holds
+  the pure, unit-tested pairing math (`computeVoicePairs()`/
+  `diffVoicePairs()`, `VOICE_PROXIMITY_RANGE` = 18 units), mirroring the
+  `parties.js`/`quests.js` side-effect-free-logic-in-its-own-file pattern; a
+  new 1-second server tick (`tickVoiceProximity()` in `server/index.js`)
+  recomputes which *pairs* of alive players are currently in range and tells
+  only those specific pairs to open a peer connection (`voicePeerJoin`,
+  with exactly one side told to `initiate` the WebRTC offer) or tear one
+  down (`voicePeerLeave`) — deliberately not an every-client-to-every-client
+  mesh, since most pairs in a larger world would be silent/wasted. The
+  server never touches audio itself; it only relays each pair's SDP offer/
+  answer/ICE candidates via a `voiceSignal` event, restricted to pairs the
+  proximity tick has actually formed so it can't be used as a generic relay
+  to an arbitrary socket. Disconnecting drops that player's pairs and
+  notifies the other side immediately (`dropVoicePairsFor()`) rather than
+  waiting for the next tick. Client-side, `client/src/voice.js` manages the
+  actual `RTCPeerConnection`s (STUN-only for now — see `DEPLOYMENT.md`) and
+  a hidden `<audio>` element per connected peer; a new mic toggle (`V` key,
+  the `🎤 Mic Off/On` HUD button, or a new touch button) requests
+  microphone access on first use and toggles the local track's `enabled`
+  flag afterward (so re-toggling never needs fresh WebRTC renegotiation). A
+  player's mic on/off state is also broadcast globally (`playerMicState`,
+  cosmetic only, like an equipment change) so every nameplate can show a 🎤
+  icon next to anyone with their mic on, regardless of whether you're
+  currently paired with them. Verified `server/voiceProximity.js`'s pairing
+  math with a standalone Node script — 26 checks covering symmetric/
+  distinct pair keys, in-range/out-of-range/exact-boundary/dead-player/
+  malformed-position cases, a 3-player "triangle" producing all 3 pairs, and
+  a simulated multi-tick sequence (converge → pair forms once → stays
+  stable while in range → diverges → pair breaks once) — all passed. Also
+  ran a full integration test booting the real server and driving 3 real
+  `socket.io-client` connections through the entire flow — pairing forming
+  only for in-range players, exactly one side told to initiate, signal
+  relay between a genuine pair, a signal to a non-paired target silently
+  dropped, mic-state broadcast reaching even a far-away player, a pair
+  breaking after moving apart, and (critically) a new pairing partner
+  getting `voicePeerLeave` *immediately* on disconnect rather than waiting
+  for the next 1-second tick — 18/18 checks passed. The WebRTC/`getUserMedia`
+  client glue itself can't be runtime-tested in this sandbox (no real
+  browser), the same limitation already noted for the day/night cycle's
+  GLSL shader and the touch-controls' real touch events — kept as small and
+  boring as possible to minimize that untested surface. This was the last
+  item in `ROADMAP.md`.
 - Guilds/parties: a lightweight grouping system so a handful of players can
   band together. `server/parties.js` holds the pure, unit-tested membership
   math (`createParty`/`addPartyMember`/`removePartyMember`, capped at

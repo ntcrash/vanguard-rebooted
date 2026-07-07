@@ -8,6 +8,7 @@ import { loadPlayerRecord, savePlayerRecord, savePlayerRecords } from "./playerS
 import { resolveLogin } from "./accountStore.js";
 import { QUEST_DEFS, initQuestState, advanceKillQuests, advanceCollectQuests } from "./quests.js";
 import { PARTY_MAX_SIZE, createParty, isPartyFull, isPartyMember, isPartyLeader, addPartyMember, removePartyMember } from "./parties.js";
+import { computeVoicePairs, diffVoicePairs, splitPairKey } from "./voiceProximity.js";
 
 const PORT = process.env.PORT || 3000;
 const WORLD_BOUNDS = 170; // players are clamped to +/- this on X/Z
@@ -537,6 +538,60 @@ function removePlayerFromParty(playerId) {
   broadcastPartyState(partyId);
 }
 
+// ---- Proximity voice chat --------------------------------------------------------
+// Server-brokered WebRTC signaling: rather than every client connecting to
+// every other client's audio, a periodic tick (mirrors tickMobs' polling
+// posture) recomputes which *pairs* of alive players are within
+// VOICE_PROXIMITY_RANGE of each other (server/voiceProximity.js's pure
+// pairing math) and tells only those specific pairs to open a peer
+// connection ("voicePeerJoin") or tear one down ("voicePeerLeave"). The
+// server itself never touches audio -- it only relays each pair's SDP
+// offer/answer/ICE candidates via "voiceSignal", the same "dumb relay"
+// posture used for every other client-to-client interaction in this game
+// (e.g. attacks, chat) being mediated through server-authoritative state.
+const VOICE_TICK_MS = 1000; // proximity doesn't need mob-tick (200ms) responsiveness
+/** @type {Set<string>} pairKey()s (see voiceProximity.js) currently "in call" */
+let voicePairs = new Set();
+
+function tickVoiceProximity() {
+  const nextPairs = computeVoicePairs(players.values());
+  const { joined, left } = diffVoicePairs(voicePairs, nextPairs);
+
+  for (const key of joined) {
+    const [idA, idB] = splitPairKey(key);
+    // Exactly one side is told to `initiate` the WebRTC offer -- otherwise
+    // both sides would independently create an offer for the same pair.
+    // Lexicographic comparison of socket ids is an arbitrary but stable,
+    // collision-free tiebreak (no shared clock/counter needed).
+    const initiatorId = idA < idB ? idA : idB;
+    const otherId = idA < idB ? idB : idA;
+    io.to(initiatorId).emit("voicePeerJoin", { peerId: otherId, initiate: true });
+    io.to(otherId).emit("voicePeerJoin", { peerId: initiatorId, initiate: false });
+  }
+
+  for (const key of left) {
+    const [idA, idB] = splitPairKey(key);
+    io.to(idA).emit("voicePeerLeave", { peerId: idB });
+    io.to(idB).emit("voicePeerLeave", { peerId: idA });
+  }
+
+  voicePairs = nextPairs;
+}
+
+/** Immediately drops every voice pair involving `playerId` (called on
+ * disconnect, rather than waiting for the next tick to notice the player is
+ * gone) and tells the remaining side of each such pair to tear its peer
+ * connection down right away. */
+function dropVoicePairsFor(playerId) {
+  for (const key of Array.from(voicePairs)) {
+    const [idA, idB] = splitPairKey(key);
+    if (idA !== playerId && idB !== playerId) continue;
+    voicePairs.delete(key);
+    const otherId = idA === playerId ? idB : idA;
+    io.to(otherId).emit("voicePeerLeave", { peerId: playerId });
+  }
+}
+
 // ---- Persistence ----------------------------------------------------------------
 // Player progress is saved keyed by the account's display-cased name (now
 // verified by accountStore.js's login middleware, see io.use() above) — the
@@ -673,6 +728,12 @@ io.on("connection", (socket) => {
     // QUEST_DEFS id — overwritten just below once `saved` is known, so a
     // returning player's actual progress (not a blank slate) is used.
     quests: initQuestState(null),
+    // Proximity voice chat (see "Proximity voice chat" above) -- purely a UI
+    // hint broadcast to everyone (like an equipment change) so a nearby
+    // player's nameplate can show a mic icon; never persisted, never
+    // affects who's actually WebRTC-paired (that's voicePairs, driven
+    // entirely by position).
+    micOn: false,
   };
 
   if (saved) {
@@ -950,6 +1011,36 @@ io.on("connection", (socket) => {
     disbandParty(partyId, "the leader disbanded the party");
   });
 
+  // ---- Proximity voice chat ------------------------------------------------
+  // Relay-only: the server never inspects SDP/ICE contents, it just forwards
+  // `data` to `targetId` with the sender's id attached. Restricted to pairs
+  // the proximity tick above has actually paired up (voicePairs) so a
+  // modified client can't use this as a generic "send arbitrary data to any
+  // socket id" relay -- same defense-in-depth posture as the attack handler
+  // re-validating range server-side instead of trusting the client's claim.
+  socket.on("voiceSignal", (data) => {
+    const p = players.get(socket.id);
+    if (!p || typeof data !== "object" || data === null) return;
+    const { targetId, data: payload } = data;
+    if (typeof targetId !== "string" || !players.has(targetId)) return;
+
+    const idA = socket.id < targetId ? socket.id : targetId;
+    const idB = socket.id < targetId ? targetId : socket.id;
+    if (!voicePairs.has(`${idA}|${idB}`)) return; // not currently a valid pair -- drop it
+
+    io.to(targetId).emit("voiceSignal", { fromId: socket.id, data: payload });
+  });
+
+  // Broadcast (not just to paired peers) since this is purely cosmetic
+  // nameplate UI, the same posture as playerEquipmentChanged -- far cheaper
+  // than tracking exactly who's currently paired with whom on the client.
+  socket.on("voiceMicState", (on) => {
+    const p = players.get(socket.id);
+    if (!p) return;
+    p.micOn = !!on;
+    io.emit("playerMicState", { id: p.id, micOn: p.micOn });
+  });
+
   socket.on("chat", (message) => {
     const p = players.get(socket.id);
     if (!p || typeof message !== "string") return;
@@ -962,6 +1053,7 @@ io.on("connection", (socket) => {
     savePlayerRecord(player.name, playerSaveRecord(player));
     removePlayerFromParty(socket.id);
     pendingPartyInvites.delete(socket.id);
+    dropVoicePairsFor(socket.id);
     players.delete(socket.id);
     io.emit("playerLeft", { id: socket.id });
     console.log(`[leave] ${player.name} (${socket.id}) — ${players.size} online`);
@@ -972,6 +1064,7 @@ spawnMobs();
 spawnPickups();
 setInterval(tickMobs, MOB_TICK_MS);
 setInterval(autosaveConnectedPlayers, AUTOSAVE_INTERVAL_MS);
+setInterval(tickVoiceProximity, VOICE_TICK_MS);
 
 httpServer.listen(PORT, () => {
   console.log(`Vanguard Rebooted server listening on http://localhost:${PORT}`);

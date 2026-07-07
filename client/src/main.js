@@ -10,11 +10,21 @@ import {
 } from "./player.js";
 import { Mob } from "./mob.js";
 import { Pickup } from "./pickup.js";
-import { initInput, keys, mouse, attack as attackInput, inventoryToggle, questLogToggle, partyToggle } from "./input.js";
+import {
+  initInput,
+  keys,
+  mouse,
+  attack as attackInput,
+  inventoryToggle,
+  questLogToggle,
+  partyToggle,
+  micToggle,
+} from "./input.js";
 import { connectToServer } from "./network.js";
 import { initChat } from "./chat.js";
 import { DamageNumbers } from "./damageNumbers.js";
 import { initCharacterCreate } from "./characterCreate.js";
+import { createVoiceManager } from "./voice.js";
 
 const canvas = document.getElementById("scene");
 const statusEl = document.getElementById("status");
@@ -39,6 +49,8 @@ const partyInvitePopupEl = document.getElementById("party-invite-popup");
 const partyInviteTextEl = document.getElementById("party-invite-text");
 const partyInviteAcceptBtnEl = document.getElementById("party-invite-accept-btn");
 const partyInviteDeclineBtnEl = document.getElementById("party-invite-decline-btn");
+const micToggleBtnEl = document.getElementById("mic-toggle-btn");
+const touchMicBtnEl = document.getElementById("touch-mic-btn");
 
 const ATTACK_COOLDOWN = 0.6; // seconds between local attacks
 const SPRINT_MULTIPLIER = 1.8; // hold Shift (input.js's keys.sprint) to move+animate this much faster
@@ -227,6 +239,25 @@ function updatePartyToggle() {
   if (partyOpen) renderPartyPanel();
 }
 
+/** Toggles this player's own mic on/off (proximity voice chat) -- requests
+ * mic hardware access on first enable (see voice.js's ensureLocalStream),
+ * tells the server so other clients' nameplates can show the icon, and
+ * updates this client's own button state. Mirrors the other panel-toggle
+ * functions' edge-triggered "requested" flag pattern, even though this
+ * toggles a mic rather than a panel. */
+function updateMicToggle() {
+  if (!micToggle.requested) return;
+  micToggle.requested = false;
+  micOn = !micOn;
+  voice.setMicEnabled(micOn);
+  net?.sendMicState(micOn);
+  if (micToggleBtnEl) {
+    micToggleBtnEl.textContent = micOn ? "\u{1F3A4} Mic On" : "\u{1F3A4} Mic Off";
+    micToggleBtnEl.classList.toggle("active", micOn);
+  }
+  if (touchMicBtnEl) touchMicBtnEl.classList.toggle("active", micOn);
+}
+
 /** Shows the Accept/Decline popup for an incoming party invite, replacing
  * any previous one this client hadn't responded to yet -- mirrors the
  * server's own "at most one outstanding invite" rule. */
@@ -286,6 +317,34 @@ const chat = initChat((text) => {
 
 let net; // assigned below, referenced by chat callback above via closure
 
+// Proximity voice chat (client/src/voice.js). Built against a small facade
+// rather than `net` directly, since `net` itself isn't assigned until
+// startGame() runs (on login) -- the facade just forwards to whatever `net`
+// currently is by the time voice.js actually calls it, same closure trick
+// the chat callback above already relies on.
+const voice = createVoiceManager({
+  sendVoiceSignal: (targetId, data) => net?.sendVoiceSignal(targetId, data),
+});
+let micOn = false;
+const playerNames = new Map(); // id -> display name, for rebuilding a nameplate's text when its mic indicator changes
+const micOnState = new Map(); // id -> bool, last-known mic-toggle state per player (cosmetic only)
+
+/** Rebuilds a player's nameplate text from their stored name plus a trailing
+ * mic icon if their mic is currently toggled on -- the only two things a
+ * nameplate ever shows, so this always fully replaces (rather than patches)
+ * the label's textContent. */
+function refreshNameplate(id) {
+  const label = labelEls.get(id);
+  const name = playerNames.get(id);
+  if (!label || !name) return;
+  label.textContent = micOnState.get(id) ? `${name} \u{1F3A4}` : name;
+}
+
+function setPlayerMicState(id, on) {
+  micOnState.set(id, !!on);
+  refreshNameplate(id);
+}
+
 function startGame(character) {
   net = connectToServer({
     onConnect: () => {
@@ -293,6 +352,10 @@ function startGame(character) {
     },
     onDisconnect: () => {
       statusEl.textContent = "Disconnected — reconnecting…";
+      // Every peer connection was necessarily with players on this same
+      // server session -- a reconnect gets entirely new "voicePeerJoin"
+      // events (or none, if no one's nearby yet) rather than resuming these.
+      voice.disposeAll();
     },
     onConnectError: (err) => {
       // Covers both "server unreachable" and a rejected login (bad
@@ -335,9 +398,22 @@ function startGame(character) {
       local.mesh = createCharacterMesh(data.self.color, local.equipment);
       local.mesh.position.set(data.self.x, data.self.y, data.self.z);
       scene.add(local.mesh);
+      playerNames.set(local.id, local.name);
       labelEls.set(local.id, makeLabel(local.name, "self"));
       healthBarEls.set(local.id, makeHealthBar());
       setHealthBarHp(local.id, local.hp, local.maxHp);
+      // A reconnect gets a fresh socket id and fresh server-side voice state
+      // (server/index.js always starts a joining player's micOn at false),
+      // so the mic toggle itself resets here too rather than carrying a
+      // stale "on" from a previous connection into a session the server
+      // doesn't know about yet.
+      micOn = false;
+      voice.setMicEnabled(false);
+      if (micToggleBtnEl) {
+        micToggleBtnEl.textContent = "\u{1F3A4} Mic Off";
+        micToggleBtnEl.classList.remove("active");
+      }
+      if (touchMicBtnEl) touchMicBtnEl.classList.remove("active");
 
       statusEl.textContent = `Connected as ${local.name}`;
       chat.addSystemLine(
@@ -384,6 +460,13 @@ function startGame(character) {
         bar.outer.remove();
         healthBarEls.delete(data.id);
       }
+      playerNames.delete(data.id);
+      micOnState.delete(data.id);
+      // The server also drops any voice pair involving a disconnecting
+      // player and tells us via "voicePeerLeave" -- but that event and this
+      // "playerLeft" event aren't guaranteed to arrive in a particular
+      // order, so tear down defensively here too rather than depend on it.
+      voice.handlePeerLeave(data.id);
     },
 
     onChat: (data) => {
@@ -607,6 +690,23 @@ function startGame(character) {
     onPartyNotice: (data) => {
       if (data?.message) chat.addSystemLine(data.message);
     },
+
+    // Proximity voice chat (server/voiceProximity.js) -- see voice.js's
+    // handlePeerJoin/handlePeerLeave/handleSignal for the actual WebRTC
+    // plumbing this just forwards into.
+    onVoicePeerJoin: (data) => {
+      voice.handlePeerJoin(data.peerId, data.initiate);
+    },
+    onVoicePeerLeave: (data) => {
+      voice.handlePeerLeave(data.peerId);
+    },
+    onVoiceSignal: (data) => {
+      voice.handleSignal(data.fromId, data.data);
+    },
+    onPlayerMicState: (data) => {
+      if (data.id === local.id) return; // our own mic state is driven locally by updateMicToggle(), not this broadcast
+      setPlayerMicState(data.id, data.micOn);
+    },
   }, character);
 }
 
@@ -653,12 +753,23 @@ if (partyInviteDeclineBtnEl) {
   });
 }
 
+if (micToggleBtnEl) {
+  micToggleBtnEl.addEventListener("click", () => {
+    micToggle.requested = true;
+  });
+}
+
 function spawnRemote(p) {
   const rp = new RemotePlayer(scene, p);
   remotePlayers.set(p.id, rp);
+  playerNames.set(p.id, p.name);
   labelEls.set(p.id, makeLabel(p.name));
   healthBarEls.set(p.id, makeHealthBar());
   setHealthBarHp(p.id, rp.hp, rp.maxHp);
+  // A player who already had their mic on before we spawned them in (e.g.
+  // they were mid-session when we joined/reconnected) should show the icon
+  // immediately rather than only after their next toggle.
+  if (p.micOn) setPlayerMicState(p.id, true);
 }
 
 function spawnMob(m) {
@@ -916,6 +1027,7 @@ function animate() {
   updateInventoryToggle();
   updateQuestLogToggle();
   updatePartyToggle();
+  updateMicToggle();
   updateZoneLabel();
   if (partyOpen) renderPartyPanel(); // keeps roster hp bars live, see renderPartyPanel()'s comment
 

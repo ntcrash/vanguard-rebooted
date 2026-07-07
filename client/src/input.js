@@ -26,6 +26,11 @@ export const questLogToggle = { requested: false };
 // cleared by main.js once it's been consumed for a frame.
 export const partyToggle = { requested: false };
 
+// Edge-triggered mic on/off toggle (proximity voice chat, see voice.js): set
+// true on the mic keybind/button, and cleared by main.js once it's been
+// consumed for a frame.
+export const micToggle = { requested: false };
+
 // On-screen movement joystick tuning, in px of finger travel from the base's
 // center. Exported as pure helpers (no DOM) so the direction/clamping math
 // can be unit tested without a browser.
@@ -98,6 +103,10 @@ export function initInput(canvas) {
       e.preventDefault();
       partyToggle.requested = true;
     }
+    if (e.code === "KeyV") {
+      e.preventDefault();
+      micToggle.requested = true;
+    }
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
       keys.sprint = true;
     }
@@ -169,6 +178,7 @@ function setupTouchControls(canvas) {
   const inventoryBtn = document.getElementById("touch-inventory-btn");
   const questBtn = document.getElementById("touch-quest-btn");
   const partyBtn = document.getElementById("touch-party-btn");
+  const micBtn = document.getElementById("touch-mic-btn");
 
   let joystickTouchId = null;
   let joystickCenterX = 0;
@@ -274,6 +284,17 @@ function setupTouchControls(canvas) {
       (e) => {
         e.preventDefault();
         partyToggle.requested = true;
+      },
+      { passive: false }
+    );
+  }
+
+  if (micBtn) {
+    micBtn.addEventListener(
+      "touchstart",
+      (e) => {
+        e.preventDefault();
+        micToggle.requested = true;
       },
       { passive: false }
     );
