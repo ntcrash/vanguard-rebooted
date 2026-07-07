@@ -43,6 +43,13 @@ export const micToggle = { requested: false };
 // consumed for a frame. Same pattern as the other panel toggles above.
 export const menuToggle = { requested: false };
 
+// Edge-triggered store-panel toggle (server/store.js's merchant NPC): set
+// true on the store keybind/button, and cleared by main.js once it's been
+// consumed for a frame. Same edge-triggered pattern as the other panel
+// toggles above -- whether it actually opens the panel (vs. showing a "move
+// closer" hint) is main.js's call, based on distance to the NPC.
+export const storeToggle = { requested: false };
+
 // Converts a raw pointer-drag delta (dx, dy in screen px) into camera
 // azimuth/elevation deltas. Pure/exported so the sign convention can be unit
 // tested without a browser. Vertical (elevation) matches the conventional
@@ -145,6 +152,10 @@ export function initInput(canvas) {
       e.preventDefault();
       menuToggle.requested = true;
     }
+    if (e.code === "KeyB") {
+      e.preventDefault();
+      storeToggle.requested = true;
+    }
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
       keys.sprint = true;
     }
@@ -220,6 +231,7 @@ function setupTouchControls(canvas) {
   const partyBtn = document.getElementById("touch-party-btn");
   const micBtn = document.getElementById("touch-mic-btn");
   const menuBtn = document.getElementById("touch-menu-btn");
+  const storeBtn = document.getElementById("touch-store-btn");
 
   let joystickTouchId = null;
   let joystickCenterX = 0;
@@ -358,6 +370,17 @@ function setupTouchControls(canvas) {
       (e) => {
         e.preventDefault();
         menuToggle.requested = true;
+      },
+      { passive: false }
+    );
+  }
+
+  if (storeBtn) {
+    storeBtn.addEventListener(
+      "touchstart",
+      (e) => {
+        e.preventDefault();
+        storeToggle.requested = true;
       },
       { passive: false }
     );

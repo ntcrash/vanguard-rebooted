@@ -67,6 +67,11 @@ export function connectToServer(handlers, character) {
   // same way a level-up is announced.
   socket.on("questProgress", (data) => handlers.onQuestProgress?.(data));
   socket.on("questCompleted", (data) => handlers.onQuestCompleted?.(data));
+  // Store NPC (server/store.js): "storePurchaseResult" answers this client's
+  // own "buyStoreItem" request (ok, or a reason it was rejected -- too far,
+  // can't afford it, wrong class's spellbook, already owned). Broadcast-free,
+  // same personal-notice treatment "spellRejected"/"partyNotice" get.
+  socket.on("storePurchaseResult", (data) => handlers.onStorePurchaseResult?.(data));
   // Parties (server/parties.js): "partyInviteReceived" is the only event this
   // client didn't ask for directly -- another player invited *us*, so it
   // needs its own accept/decline UI (see main.js's party invite popup).
@@ -141,6 +146,9 @@ export function connectToServer(handlers, character) {
     },
     requestSave() {
       socket.emit("requestSave");
+    },
+    buyStoreItem(itemId) {
+      socket.emit("buyStoreItem", itemId);
     },
     raw: socket,
   };

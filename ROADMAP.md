@@ -7,7 +7,6 @@ reprioritized based on what's more fun to build/play.
 - [Add] a local client (none web browser) using Electron or something similar
 - [fix] create account, add account, and create character.  An account should be able to have multiple characters
 - [Add] NPC for quests
-- [Add] NPC for store, to buy items including spells
 - [Enhancement] Upgrade the character graphics
 - [Enhancement] Upgrade in game graphics
 
