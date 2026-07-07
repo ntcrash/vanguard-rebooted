@@ -49,6 +49,19 @@ export function connectToServer(handlers, character) {
   // same way a level-up is announced.
   socket.on("questProgress", (data) => handlers.onQuestProgress?.(data));
   socket.on("questCompleted", (data) => handlers.onQuestCompleted?.(data));
+  // Parties (server/parties.js): "partyInviteReceived" is the only event this
+  // client didn't ask for directly -- another player invited *us*, so it
+  // needs its own accept/decline UI (see main.js's party invite popup).
+  // "partyState" carries this party's current roster (sent to every member
+  // whenever membership changes); "partyLeft"/"partyDisbanded" tell this
+  // client specifically that it's no longer in a party (voluntarily vs. not);
+  // "partyNotice" is a one-off informational message (invite sent/declined,
+  // party full, etc.) meant to be shown the same way a chat system line is.
+  socket.on("partyInviteReceived", (data) => handlers.onPartyInviteReceived?.(data));
+  socket.on("partyState", (data) => handlers.onPartyState?.(data));
+  socket.on("partyLeft", (data) => handlers.onPartyLeft?.(data));
+  socket.on("partyDisbanded", (data) => handlers.onPartyDisbanded?.(data));
+  socket.on("partyNotice", (data) => handlers.onPartyNotice?.(data));
   // Server-side anti-cheat (see server/index.js's MAX_MOVE_SPEED) rejected a
   // "move" this client sent as covering too much ground too fast -- either a
   // real speed/teleport hack, or (much more commonly) a bad lag spike. Either
@@ -71,6 +84,18 @@ export function connectToServer(handlers, character) {
     },
     sendUnequip(slot) {
       socket.emit("unequipItem", slot);
+    },
+    sendPartyInvite(targetName) {
+      socket.emit("partyInvite", targetName);
+    },
+    respondPartyInvite(accept) {
+      socket.emit("partyRespond", { accept });
+    },
+    leaveParty() {
+      socket.emit("partyLeave");
+    },
+    disbandParty() {
+      socket.emit("partyDisband");
     },
     raw: socket,
   };

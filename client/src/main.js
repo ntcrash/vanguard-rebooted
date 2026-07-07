@@ -10,7 +10,7 @@ import {
 } from "./player.js";
 import { Mob } from "./mob.js";
 import { Pickup } from "./pickup.js";
-import { initInput, keys, mouse, attack as attackInput, inventoryToggle, questLogToggle } from "./input.js";
+import { initInput, keys, mouse, attack as attackInput, inventoryToggle, questLogToggle, partyToggle } from "./input.js";
 import { connectToServer } from "./network.js";
 import { initChat } from "./chat.js";
 import { DamageNumbers } from "./damageNumbers.js";
@@ -29,6 +29,16 @@ const inventoryGridEl = document.getElementById("inventory-grid");
 const INVENTORY_SLOT_COUNT = 20; // must match server's MAX_INVENTORY_SLOTS
 const questPanelEl = document.getElementById("quest-panel");
 const questListEl = document.getElementById("quest-list");
+const partyPanelEl = document.getElementById("party-panel");
+const partyRosterEl = document.getElementById("party-roster");
+const partyInviteInputEl = document.getElementById("party-invite-input");
+const partyInviteBtnEl = document.getElementById("party-invite-btn");
+const partyLeaveBtnEl = document.getElementById("party-leave-btn");
+const partyDisbandBtnEl = document.getElementById("party-disband-btn");
+const partyInvitePopupEl = document.getElementById("party-invite-popup");
+const partyInviteTextEl = document.getElementById("party-invite-text");
+const partyInviteAcceptBtnEl = document.getElementById("party-invite-accept-btn");
+const partyInviteDeclineBtnEl = document.getElementById("party-invite-decline-btn");
 
 const ATTACK_COOLDOWN = 0.6; // seconds between local attacks
 const SPRINT_MULTIPLIER = 1.8; // hold Shift (input.js's keys.sprint) to move+animate this much faster
@@ -87,6 +97,8 @@ const local = {
   inventory: [], // [{ itemId, name, icon, qty, slot }], server-authoritative
   equipment: { weapon: null, head: null, body: null }, // server-authoritative
   quests: {}, // { [questId]: { progress, completed } }, server-authoritative
+  partyId: null, // server/parties.js party id, or null if not in a party
+  partyRoster: [], // [{ id, name, isLeader }], server-authoritative (see "partyState")
 };
 
 // Static quest definitions ({ id, name, description, count, ... }), sent
@@ -102,6 +114,11 @@ const healthBarEls = new Map(); // id -> { outer, fill } HTMLDivElements, shared
 const damageNumbers = new DamageNumbers(labelsEl);
 let inventoryOpen = false;
 let questLogOpen = false;
+let partyOpen = false;
+// The single incoming party invite (if any) this client is currently showing
+// an Accept/Decline popup for -- mirrors pendingPartyInvites' "at most one
+// outstanding invite per player" rule on the server (server/index.js).
+let pendingIncomingInvite = null;
 
 /** Rebuilds the inventory panel's grid from local.inventory, padding out to
  * INVENTORY_SLOT_COUNT empty slots so unused capacity is visible. */
@@ -170,6 +187,58 @@ function updateQuestLogToggle() {
   questLogToggle.requested = false;
   questLogOpen = !questLogOpen;
   if (questPanelEl) questPanelEl.classList.toggle("hidden", !questLogOpen);
+}
+
+/** Rebuilds the party panel's roster from local.partyRoster (server-sent
+ * names + leader flag) plus each member's hp/maxHp -- read straight off
+ * `local` (self) or the matching RemotePlayer, both of which are already
+ * kept up to date by the existing playerDamaged/playerLeveledUp/
+ * playerRespawned handlers below, so the server doesn't need to duplicate
+ * hp into every "partyState" broadcast. Called every frame while the panel
+ * is open (cheap: at most PARTY_MAX_SIZE rows), same as the floating health
+ * bars' per-frame refresh, so a member's hp bar here stays live without
+ * wiring a re-render call into every place hp can change. */
+function renderPartyPanel() {
+  if (!partyRosterEl) return;
+  partyRosterEl.innerHTML = "";
+  for (const member of local.partyRoster) {
+    const hp = member.id === local.id ? local.hp : remotePlayers.get(member.id)?.hp ?? 0;
+    const maxHp = member.id === local.id ? local.maxHp : remotePlayers.get(member.id)?.maxHp ?? 100;
+    const pct = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) * 100 : 0;
+
+    const div = document.createElement("div");
+    div.className = "party-member";
+    div.innerHTML =
+      `<div class="party-member-name">${member.isLeader ? '<span class="leader-icon">★</span>' : ""}${member.name}</div>` +
+      `<div class="party-member-hp"><div class="party-member-hp-fill${pct <= 35 ? " low" : ""}" style="width:${pct}%"></div></div>`;
+    partyRosterEl.appendChild(div);
+  }
+
+  const isLeader = local.partyRoster.find((m) => m.id === local.id)?.isLeader ?? false;
+  if (partyLeaveBtnEl) partyLeaveBtnEl.classList.toggle("hidden", !local.partyId);
+  if (partyDisbandBtnEl) partyDisbandBtnEl.classList.toggle("hidden", !local.partyId || !isLeader);
+}
+
+function updatePartyToggle() {
+  if (!partyToggle.requested) return;
+  partyToggle.requested = false;
+  partyOpen = !partyOpen;
+  if (partyPanelEl) partyPanelEl.classList.toggle("hidden", !partyOpen);
+  if (partyOpen) renderPartyPanel();
+}
+
+/** Shows the Accept/Decline popup for an incoming party invite, replacing
+ * any previous one this client hadn't responded to yet -- mirrors the
+ * server's own "at most one outstanding invite" rule. */
+function showPartyInvitePopup(inviterId, inviterName) {
+  pendingIncomingInvite = { inviterId, inviterName };
+  if (partyInviteTextEl) partyInviteTextEl.textContent = `${inviterName} invited you to a party.`;
+  if (partyInvitePopupEl) partyInvitePopupEl.classList.remove("hidden");
+}
+
+function hidePartyInvitePopup() {
+  pendingIncomingInvite = null;
+  if (partyInvitePopupEl) partyInvitePopupEl.classList.add("hidden");
 }
 
 function makeLabel(text, variant) {
@@ -251,9 +320,16 @@ function startGame(character) {
       local.xp = data.self.xp ?? 0;
       local.xpToNext = data.self.xpToNext ?? 100;
       local.quests = data.self.quests || {};
+      // A fresh connection never starts already in a party server-side (see
+      // server/index.js's connection handler) -- reset any stale roster from
+      // a prior connection so a reconnect doesn't show a party we've already
+      // left as far as the server is concerned.
+      local.partyId = null;
+      local.partyRoster = [];
       questDefs = data.questDefs || {};
       renderInventory();
       renderQuestLog();
+      renderPartyPanel();
       updateXpUI();
 
       local.mesh = createCharacterMesh(data.self.color, local.equipment);
@@ -501,10 +577,81 @@ function startGame(character) {
       const who = data.id === local.id ? "You" : data.name;
       chat.addSystemLine(`${who} completed the quest: ${data.questName}!`);
     },
+
+    // Parties (server/parties.js) -- see the party panel functions above and
+    // network.js's comment on each of these events for what they mean.
+    onPartyInviteReceived: (data) => {
+      showPartyInvitePopup(data.inviterId, data.inviterName);
+    },
+
+    onPartyState: (data) => {
+      local.partyId = data.partyId;
+      local.partyRoster = data.roster || [];
+      if (partyOpen) renderPartyPanel();
+    },
+
+    onPartyLeft: () => {
+      local.partyId = null;
+      local.partyRoster = [];
+      chat.addSystemLine("You left the party.");
+      if (partyOpen) renderPartyPanel();
+    },
+
+    onPartyDisbanded: (data) => {
+      local.partyId = null;
+      local.partyRoster = [];
+      chat.addSystemLine(`Your party disbanded${data?.reason ? ` (${data.reason})` : ""}.`);
+      if (partyOpen) renderPartyPanel();
+    },
+
+    onPartyNotice: (data) => {
+      if (data?.message) chat.addSystemLine(data.message);
+    },
   }, character);
 }
 
 const loginScreen = initCharacterCreate(startGame);
+
+// ---- Party UI wiring --------------------------------------------------------------
+// Button/input handlers are wired once at module load (not per-connection,
+// unlike the socket event handlers inside startGame()) since they only ever
+// request something from the server through `net` -- same pattern as the
+// chat input's callback above.
+
+if (partyInviteBtnEl && partyInviteInputEl) {
+  const sendInvite = () => {
+    const name = partyInviteInputEl.value.trim();
+    if (!name || !net) return;
+    net.sendPartyInvite(name);
+    partyInviteInputEl.value = "";
+  };
+  partyInviteBtnEl.addEventListener("click", sendInvite);
+  partyInviteInputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendInvite();
+  });
+}
+
+if (partyLeaveBtnEl) {
+  partyLeaveBtnEl.addEventListener("click", () => net?.leaveParty());
+}
+
+if (partyDisbandBtnEl) {
+  partyDisbandBtnEl.addEventListener("click", () => net?.disbandParty());
+}
+
+if (partyInviteAcceptBtnEl) {
+  partyInviteAcceptBtnEl.addEventListener("click", () => {
+    net?.respondPartyInvite(true);
+    hidePartyInvitePopup();
+  });
+}
+
+if (partyInviteDeclineBtnEl) {
+  partyInviteDeclineBtnEl.addEventListener("click", () => {
+    net?.respondPartyInvite(false);
+    hidePartyInvitePopup();
+  });
+}
 
 function spawnRemote(p) {
   const rp = new RemotePlayer(scene, p);
@@ -768,7 +915,9 @@ function animate() {
   updateLocalAttack(dt);
   updateInventoryToggle();
   updateQuestLogToggle();
+  updatePartyToggle();
   updateZoneLabel();
+  if (partyOpen) renderPartyPanel(); // keeps roster hp bars live, see renderPartyPanel()'s comment
 
   const dayNight = updateDayNight(scene, sky, sun, hemi, clock.elapsedTime);
   updateTimeLabel(clock.elapsedTime);
