@@ -77,6 +77,11 @@ a full game.
   names, leader status, and live HP at a glance, and leave or disband the
   party; groups are capped at 5, and leadership automatically passes to
   another member if the leader leaves
+- Proximity voice chat: toggle your mic (`V`, the HUD button, or a touch
+  button) and automatically hear/be heard by other players near you over a
+  live WebRTC connection — no call/invite step, it just connects as you walk
+  into range and disconnects as you walk out. A small 🎤 icon on a
+  nameplate shows who currently has their mic on
 
 Accounts are stored alongside player saves in `server/data/accounts.json`
 (gitignored, password hashes only — never plaintext).
@@ -141,13 +146,14 @@ Deploying this somewhere other players can reach it? See
 | `I`                     | Toggle inventory panel           |
 | `L`                     | Toggle quest log                 |
 | `P`                     | Toggle party panel                |
+| `V`                     | Toggle mic (proximity voice chat) |
 | `Enter`                 | Focus chat box / send message    |
 | `Esc`                   | Clear & unfocus chat box          |
 
 On a touchscreen, a virtual joystick (bottom-left) replaces WASD, and a
-Sprint/Attack/Inventory/Quest Log/Party button stack (bottom-right) replaces
-`Shift`/click-or-`F`/`I`/`L`/`P`. Dragging a finger anywhere else on the scene
-orbits the camera, same as a mouse drag.
+Sprint/Attack/Inventory/Quest Log/Party/Mic button stack (bottom-right)
+replaces `Shift`/click-or-`F`/`I`/`L`/`P`/`V`. Dragging a finger anywhere
+else on the scene orbits the camera, same as a mouse drag.
 
 ## Development notes
 

@@ -68,6 +68,17 @@ export function connectToServer(handlers, character) {
   // way, the server's authoritative position comes along so the client can
   // snap back in sync instead of silently drifting.
   socket.on("moveRejected", (data) => handlers.onMoveRejected?.(data));
+  // Proximity voice chat (server/voiceProximity.js + the "Proximity voice
+  // chat" block in server/index.js): "voicePeerJoin"/"voicePeerLeave" tell
+  // this client to start/stop a WebRTC peer connection with a specific
+  // nearby player (see client/src/voice.js); "voiceSignal" carries that
+  // peer's relayed SDP offer/answer/ICE candidate; "playerMicState" is a
+  // purely cosmetic broadcast (like playerEquipmentChanged) so every
+  // client's nameplate can show whether a player has their mic toggled on.
+  socket.on("voicePeerJoin", (data) => handlers.onVoicePeerJoin?.(data));
+  socket.on("voicePeerLeave", (data) => handlers.onVoicePeerLeave?.(data));
+  socket.on("voiceSignal", (data) => handlers.onVoiceSignal?.(data));
+  socket.on("playerMicState", (data) => handlers.onPlayerMicState?.(data));
 
   return {
     sendMove(x, y, z, rotY) {
@@ -96,6 +107,12 @@ export function connectToServer(handlers, character) {
     },
     disbandParty() {
       socket.emit("partyDisband");
+    },
+    sendVoiceSignal(targetId, data) {
+      socket.emit("voiceSignal", { targetId, data });
+    },
+    sendMicState(on) {
+      socket.emit("voiceMicState", !!on);
     },
     raw: socket,
   };

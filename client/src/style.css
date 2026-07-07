@@ -610,6 +610,34 @@ html, body {
   border-color: #7ee0ff;
 }
 
+#touch-mic-btn.active {
+  background: rgba(126, 255, 160, 0.35);
+  border-color: #7effa0;
+}
+
+/* Proximity voice chat mic toggle -- part of #hud (which is
+   pointer-events: none so it doesn't block clicks through to the canvas),
+   so it needs pointer-events re-enabled on itself, same treatment as any
+   other clickable element sitting inside a pointer-events:none ancestor. */
+#mic-toggle-btn {
+  pointer-events: auto;
+  margin-top: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e8f0f5;
+  background: rgba(14, 20, 26, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#mic-toggle-btn.active {
+  background: rgba(126, 255, 160, 0.25);
+  border-color: #7effa0;
+  color: #d3ffe0;
+}
+
 #login-screen {
   position: absolute;
   inset: 0;
