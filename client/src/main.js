@@ -1,5 +1,14 @@
 import * as THREE from "three";
-import { buildWorld, torchFlicker, updateDayNight, updateRain, dayPeriodLabel, dayNightPhase } from "./world.js";
+import {
+  buildWorld,
+  torchFlicker,
+  updateDayNight,
+  updateRain,
+  updatePond,
+  updateFireflies,
+  dayPeriodLabel,
+  dayNightPhase,
+} from "./world.js";
 import {
   createCharacterMesh,
   applyEquipment,
@@ -103,7 +112,7 @@ renderer.toneMappingExposure = 1.05;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-const { torches, sky, sun, hemi, rain } = buildWorld(scene);
+const { torches, sky, sun, hemi, rain, pond, fireflies } = buildWorld(scene);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
 const cameraState = { azimuth: Math.PI, elevation: 0.45, distance: 8 };
@@ -1449,6 +1458,8 @@ function animate() {
     torch.light.intensity = torchFlicker(clock.elapsedTime, torch.seed, torchBase);
   }
   updateRain(rain, dt, clock.elapsedTime, local.mesh?.position.x ?? 0, local.mesh?.position.z ?? 0);
+  updatePond(pond, clock.elapsedTime);
+  updateFireflies(fireflies, clock.elapsedTime, dayNight.nightFactor);
 
   for (const rp of remotePlayers.values()) rp.update(dt);
   for (const mob of mobs.values()) mob.update(dt);

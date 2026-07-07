@@ -31,9 +31,10 @@ a full game.
   Arcane Bolt. Cast it with `Q` (or the 🔮 touch button) at the nearest
   in-range mob in front of you; it always hits harder than your plain melee
   attack but has its own, longer cooldown, shown in a dedicated HUD bar
-- 3D outdoor world (ground, grass, trees, rocks, soft shadows, a gradient sky
-  dome, and fog) spanning two distinct zones — the starting Meadow and the
-  Whispering Forest to the north, reached on foot past a pair of stone
+- 3D outdoor world (a subtly patchwork-colored ground, grass, trees, rocks,
+  soft shadows, a gradient sky dome, and fog) spanning two distinct zones —
+  the starting Meadow (with a shimmering pond ringed by rocks and reeds) and
+  the Whispering Forest to the north, reached on foot past a pair of stone
   gateway pillars, each lit by a flickering torch
 - Multiplayer: see other connected players move around in real time
 - Third-person camera you orbit with the mouse and zoom with the scroll wheel
@@ -85,7 +86,8 @@ a full game.
   with a HUD label showing the current time of day; forest gateway torches
   burn visibly brighter at night. Rain occasionally rolls in (a following
   particle-based shower centered on your position) for a stretch of every
-  10-minute weather cycle
+  10-minute weather cycle; fireflies drift through the Whispering Forest once
+  it gets dark enough
 - Simple quest system: three quests — Boar Cull, Wolf Hunter, and Moonpetal
   Gathering — tracked server-side and shown in a toggleable quest log (`L`);
   defeating the right mobs or collecting the right item advances progress
