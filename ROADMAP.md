@@ -3,7 +3,17 @@
 A rough, non-binding order of what's planned next. Anything here can be
 reprioritized based on what's more fun to build/play.
 
-Nothing queued up right now — every previously-listed idea (including the
-last one, proximity voice chat) has shipped; see
-[CHANGELOG.md](./CHANGELOG.md) for the full history. Add new ideas here
+# Fixes and features
+- [Add] a local client (none web browser) using Electron or something similar
+- [Add] Character Classes, (Paladin, warrior, rogue, mage, and others)
+- [Add] Spell attacks, spells should be based on character class, and level
+- [fix] create account, add account, and create character.  An account should be able to have multiple characters
+- [Add] NPC for quests
+- [Add] NPC for store, to buy items including spells
+- [Fix] enemies aka things like boars should attack once attacked.
+- [Add] Esc should bring up game menu.  Save, exit and whatnot.
+- [Enhancement] Upgrade the character graphics
+- [Enhancement] Upgrade in game graphics
+
+See [CHANGELOG.md](./CHANGELOG.md) for shipped work. Add new ideas here
 whenever one comes up.
