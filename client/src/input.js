@@ -31,6 +31,24 @@ export const partyToggle = { requested: false };
 // consumed for a frame.
 export const micToggle = { requested: false };
 
+// Converts a raw pointer-drag delta (dx, dy in screen px) into camera
+// azimuth/elevation deltas. Pure/exported so the sign convention can be unit
+// tested without a browser. Vertical (elevation) matches the conventional
+// "non-inverted" mouse-look feel used by most first/third-person games:
+// dragging the pointer up (dy negative) looks up (elevation decreases,
+// swinging the orbit camera down toward eye level), dragging down (dy
+// positive) looks down (elevation increases, swinging the camera up and
+// over the player). Previously this was backwards — dragging up made the
+// camera swing up and look down, dragging down made it look up — which was
+// the "Mouse needs to be inverted" bug.
+export const MOUSE_SENSITIVITY = 0.005;
+export function mouseDeltaToLook(dx, dy, sensitivity = MOUSE_SENSITIVITY) {
+  return {
+    deltaAzimuth: -dx * sensitivity,
+    deltaElevation: dy * sensitivity,
+  };
+}
+
 // On-screen movement joystick tuning, in px of finger travel from the base's
 // center. Exported as pure helpers (no DOM) so the direction/clamping math
 // can be unit tested without a browser.
@@ -147,8 +165,9 @@ export function initInput(canvas) {
     const dy = e.clientY - mouse.lastY;
     mouse.lastX = e.clientX;
     mouse.lastY = e.clientY;
-    mouse.deltaAzimuth -= dx * 0.005;
-    mouse.deltaElevation -= dy * 0.005;
+    const look = mouseDeltaToLook(dx, dy);
+    mouse.deltaAzimuth += look.deltaAzimuth;
+    mouse.deltaElevation += look.deltaElevation;
   });
 
   canvas.addEventListener(
@@ -326,8 +345,9 @@ function setupTouchControls(canvas) {
       const dy = touch.clientY - mouse.lastY;
       mouse.lastX = touch.clientX;
       mouse.lastY = touch.clientY;
-      mouse.deltaAzimuth -= dx * 0.005;
-      mouse.deltaElevation -= dy * 0.005;
+      const look = mouseDeltaToLook(dx, dy);
+      mouse.deltaAzimuth += look.deltaAzimuth;
+      mouse.deltaElevation += look.deltaElevation;
     },
     { passive: true }
   );

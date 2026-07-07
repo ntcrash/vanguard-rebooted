@@ -5,6 +5,19 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Mouse look was inverted vertically: dragging the pointer up swung the
+  orbit camera up and tilted the view down at the player, and dragging down
+  did the opposite — backwards from the conventional non-inverted feel used
+  by most first/third-person games. The dx/dy-to-camera-delta math was
+  pulled out of the `mousemove`/`touchmove` handlers in `client/src/input.js`
+  into a small pure, exported `mouseDeltaToLook(dx, dy, sensitivity)` helper
+  (mirrors the rest of the codebase's "extract the math into a pure,
+  testable function" pattern) with the vertical sign flipped; horizontal
+  (azimuth) look is unchanged. Applies to both mouse-drag and the mobile
+  single-finger camera-drag, since both now go through the same helper.
+
 ### Added
 
 - Proximity voice chat: players near each other can hear one another over a
