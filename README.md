@@ -41,9 +41,12 @@ a full game.
 - XP/leveling: defeating mobs earns XP toward your next level, shown as a
   level + XP bar in the HUD; leveling up fully heals you and raises your max HP
 - Floating damage numbers pop up whenever a mob takes a hit
+- Mob aggro: hitting a mob makes it hostile — it chases you down and strikes
+  back every second or so until it or you dies, or you flee far enough from
+  its home territory that it gives up and resumes wandering
 - Respawn handling: defeated mobs come back to life at their spawn point after
-  a short delay, and mobs occasionally hit back — a player defeated in combat
-  respawns nearby a few seconds later with full health
+  a short delay; a player defeated in combat respawns nearby a few seconds
+  later with full health
 - Persistent player state: level, XP, HP, inventory, equipment, and position
   are saved server-side (`server/data/players.json`, gitignored) keyed by
   your account name, and restored automatically the next time you log in —

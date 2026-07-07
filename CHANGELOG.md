@@ -8,7 +8,20 @@ tagged there.
 
 ## [Unreleased]
 
-Nothing queued up right now — add new ideas to [ROADMAP.md](./ROADMAP.md).
+### Fixed
+
+- Mobs now actually fight back: landing a hit on a boar/wolf makes it
+  hostile toward you (`acquireAggro()` in the new `server/mobAI.js`, mirroring
+  the `quests.js`/`parties.js` pure-logic-in-its-own-file pattern) — it chases
+  at `MOB_CHASE_SPEED` (2.4 units/sec, faster than its normal wander speed)
+  and strikes back roughly every 1.4s once in range, instead of only having a
+  40% chance of a single passive counter-hit the moment you struck it. It
+  keeps chasing until it or you dies, you flee more than `MOB_LEASH_RANGE`
+  (25 units) from its home spawn point, or it's defeated — at which point it
+  gives up (or, on death, respawns) and resumes idle wandering. The old
+  40%-chance immediate counter-hit on the triggering blow is unchanged and
+  still fires on top of the new chase, so combat has risk from the very
+  first swing, not just once the mob catches up.
 
 ## [0.6.0] - 2026-07-06
 
