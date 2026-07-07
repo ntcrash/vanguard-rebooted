@@ -14,6 +14,13 @@ export const mouse = {
 // keybind, and cleared by main.js once it's been consumed for a frame.
 export const attack = { requested: false };
 
+// Edge-triggered spell-cast request: set true on the spell keybind (or the
+// touch spell button), and cleared by main.js once it's been consumed for a
+// frame. Deliberately separate from `attack` above -- a class's spell (see
+// server/spells.js) has its own independent cooldown/level-gate, so it
+// shouldn't share a single "requested" flag with the plain melee attack.
+export const spellCast = { requested: false };
+
 // Edge-triggered inventory-panel toggle: set true on the inventory keybind,
 // and cleared by main.js once it's been consumed for a frame.
 export const inventoryToggle = { requested: false };
@@ -114,6 +121,10 @@ export function initInput(canvas) {
       e.preventDefault();
       attack.requested = true;
     }
+    if (e.code === "KeyQ") {
+      e.preventDefault();
+      spellCast.requested = true;
+    }
     if (e.code === "KeyI") {
       e.preventDefault();
       inventoryToggle.requested = true;
@@ -203,6 +214,7 @@ function setupTouchControls(canvas) {
   const joystickKnob = document.getElementById("touch-joystick-knob");
   const sprintBtn = document.getElementById("touch-sprint-btn");
   const attackBtn = document.getElementById("touch-attack-btn");
+  const spellBtn = document.getElementById("touch-spell-btn");
   const inventoryBtn = document.getElementById("touch-inventory-btn");
   const questBtn = document.getElementById("touch-quest-btn");
   const partyBtn = document.getElementById("touch-party-btn");
@@ -280,6 +292,17 @@ function setupTouchControls(canvas) {
       (e) => {
         e.preventDefault();
         attack.requested = true;
+      },
+      { passive: false }
+    );
+  }
+
+  if (spellBtn) {
+    spellBtn.addEventListener(
+      "touchstart",
+      (e) => {
+        e.preventDefault();
+        spellCast.requested = true;
       },
       { passive: false }
     );

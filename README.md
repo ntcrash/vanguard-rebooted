@@ -22,6 +22,12 @@ a full game.
   alongside your level in the HUD (see `server/classes.js`). Your class is
   locked in for that account from then on, the same way your name/password
   are
+- Spell attacks: each class has one signature spell (`server/spells.js`),
+  unlocked at level 3 — Warrior's Rending Strike, Paladin's Holy Smite (also
+  heals you a little), Rogue's Shadow Strike, and the Mage's longer-ranged
+  Arcane Bolt. Cast it with `Q` (or the 🔮 touch button) at the nearest
+  in-range mob in front of you; it always hits harder than your plain melee
+  attack but has its own, longer cooldown, shown in a dedicated HUD bar
 - 3D outdoor world (ground, grass, trees, rocks, soft shadows, a gradient sky
   dome, and fog) spanning two distinct zones — the starting Meadow and the
   Whispering Forest to the north, reached on foot past a pair of stone
@@ -156,6 +162,7 @@ Deploying this somewhere other players can reach it? See
 | Mouse drag              | Orbit camera around your character |
 | Scroll wheel            | Zoom camera in/out               |
 | Click (no drag) / `F` / `Space` | Melee attack (cooldown applies) |
+| `Q`                     | Cast your class spell (once unlocked at level 3) |
 | `I`                     | Toggle inventory panel           |
 | `L`                     | Toggle quest log                 |
 | `P`                     | Toggle party panel                |
@@ -164,9 +171,10 @@ Deploying this somewhere other players can reach it? See
 | `Esc`                   | Clear & unfocus chat box (while chatting); otherwise open the game menu |
 
 On a touchscreen, a virtual joystick (bottom-left) replaces WASD, and a
-Sprint/Attack/Inventory/Quest Log/Party/Mic/Menu button stack (bottom-right)
-replaces `Shift`/click-or-`F`/`I`/`L`/`P`/`V`/`Esc`. Dragging a finger anywhere
-else on the scene orbits the camera, same as a mouse drag.
+Sprint/Attack/Spell/Inventory/Quest Log/Party/Mic/Menu button stack
+(bottom-right) replaces `Shift`/click-or-`F`/`Q`/`I`/`L`/`P`/`V`/`Esc`.
+Dragging a finger anywhere else on the scene orbits the camera, same as a
+mouse drag.
 
 ## Development notes
 

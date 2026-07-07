@@ -6,6 +6,8 @@ import {
   RemotePlayer,
   triggerAttack,
   updateAttack,
+  triggerSpellCast,
+  updateSpellCast,
   updateLocomotion,
 } from "./player.js";
 import { Mob } from "./mob.js";
@@ -15,6 +17,7 @@ import {
   keys,
   mouse,
   attack as attackInput,
+  spellCast as spellCastInput,
   inventoryToggle,
   questLogToggle,
   partyToggle,
@@ -33,6 +36,8 @@ const zoneLabelEl = document.getElementById("zone-label");
 const timeLabelEl = document.getElementById("time-label");
 const labelsEl = document.getElementById("labels");
 const cooldownFillEl = document.getElementById("attack-cooldown-fill");
+const spellCooldownFillEl = document.getElementById("spell-cooldown-fill");
+const spellInfoEl = document.getElementById("spell-info");
 const levelDisplayEl = document.getElementById("level-display");
 const xpBarFillEl = document.getElementById("xp-bar-fill");
 const inventoryPanelEl = document.getElementById("inventory-panel");
@@ -110,6 +115,8 @@ const local = {
   alive: true,
   moveSpeed: 7, // units/sec
   attackCooldownRemaining: 0, // seconds left before another attack can fire
+  spell: null, // this class's spell def (server/spells.js), sent once on "init"
+  spellCooldownRemaining: 0, // seconds left before the spell can be cast again
   level: 1,
   xp: 0,
   xpToNext: 100,
@@ -339,6 +346,33 @@ function updateXpUI() {
     const pct = local.xpToNext > 0 ? Math.max(0, Math.min(1, local.xp / local.xpToNext)) * 100 : 0;
     xpBarFillEl.style.width = `${pct}%`;
   }
+  // A level-up can cross a spell's minLevel gate, so keep the spell HUD's
+  // locked/unlocked text in sync with the XP HUD rather than needing its own
+  // separate call wired into every place level can change.
+  updateSpellUI();
+}
+
+/** Refreshes the spell HUD row: shows the class's spell name/icon once
+ * local.level reaches its minLevel, a "locked until level X" hint before
+ * that, and drives the cooldown bar the same way updateLocalAttack drives
+ * `cooldownFillEl`. A player with no spell yet (local.spell still null,
+ * briefly true before the first "init" arrives) leaves the row blank. */
+function updateSpellUI() {
+  if (spellInfoEl) {
+    if (!local.spell) {
+      spellInfoEl.textContent = "";
+    } else if (local.level < local.spell.minLevel) {
+      spellInfoEl.textContent = `\u{1F512} ${local.spell.name} unlocks at level ${local.spell.minLevel}`;
+    } else {
+      spellInfoEl.textContent = `${local.spell.icon} ${local.spell.name} (Q)`;
+    }
+  }
+  if (spellCooldownFillEl) {
+    const cooldownSec = local.spell ? local.spell.cooldownMs / 1000 : 1;
+    const ready = local.spellCooldownRemaining <= 0;
+    spellCooldownFillEl.style.width = `${(1 - local.spellCooldownRemaining / cooldownSec) * 100}%`;
+    spellCooldownFillEl.classList.toggle("ready", ready);
+  }
 }
 
 // ---- Chat -----------------------------------------------------------------------
@@ -417,6 +451,8 @@ function startGame(character) {
       local.xp = data.self.xp ?? 0;
       local.xpToNext = data.self.xpToNext ?? 100;
       local.characterClass = data.self.characterClass || "warrior";
+      local.spell = data.self.spell || null;
+      local.spellCooldownRemaining = 0;
       local.quests = data.self.quests || {};
       // A fresh connection never starts already in a party server-side (see
       // server/index.js's connection handler) -- reset any stale roster from
@@ -511,6 +547,41 @@ function startGame(character) {
     onPlayerAttacked: (data) => {
       const rp = remotePlayers.get(data.id);
       if (rp) rp.triggerAttack();
+    },
+
+    onPlayerCastSpell: (data) => {
+      const rp = remotePlayers.get(data.id);
+      if (rp) rp.triggerSpellCast();
+    },
+
+    // Personal notice that a spell cast was rejected server-side (still on
+    // cooldown, not unlocked yet, or no valid target in range) -- surfaced
+    // as a chat system line the same lightweight way "partyNotice" is,
+    // rather than its own dedicated UI element.
+    onSpellRejected: (data) => {
+      if (data?.reason) chat.addSystemLine(data.reason);
+    },
+
+    // A class spell's self-heal (currently just the paladin's Holy Smite)
+    // landed -- update hp same as onPlayerDamaged, but spawn a "+N" heal
+    // number instead of a "-N" damage one.
+    onPlayerHealed: (data) => {
+      if (data.id === local.id) {
+        local.hp = data.hp;
+        setHealthBarHp(local.id, local.hp, local.maxHp);
+        if (local.mesh) {
+          _dmgPos.copy(local.mesh.position);
+          _dmgPos.y += 2.3;
+          damageNumbers.spawn(_dmgPos, data.amount, { heal: true });
+        }
+      } else {
+        const rp = remotePlayers.get(data.id);
+        if (rp) {
+          rp.hp = data.hp;
+          setHealthBarHp(data.id, rp.hp, rp.maxHp);
+          damageNumbers.spawn(rp.headWorldPosition(_dmgPos), data.amount, { heal: true });
+        }
+      }
     },
 
     onMobsState: (data) => {
@@ -982,8 +1053,11 @@ function updateLocalPlayer(dt) {
   camera.lookAt(local.mesh.position.x, local.mesh.position.y + eyeHeight, local.mesh.position.z);
 }
 
-/** Finds the nearest alive mob within attack range that's roughly in front of the player. */
-function findAttackTargetMobId() {
+/** Finds the nearest alive mob within `range` that's roughly in front of the
+ * player -- shared by the plain melee attack and spell casts below, which
+ * just pass their own range (a melee-range spell matches MOB_ATTACK_RANGE;
+ * the mage's longer bolt passes its own larger spell.range instead). */
+function findNearestMobInRange(range) {
   if (!local.mesh) return null;
 
   const forwardX = Math.sin(local.mesh.rotation.y);
@@ -998,7 +1072,7 @@ function findAttackTargetMobId() {
     const dx = mob.mesh.position.x - local.mesh.position.x;
     const dz = mob.mesh.position.z - local.mesh.position.z;
     const dist = Math.hypot(dx, dz);
-    if (dist > MOB_ATTACK_RANGE || dist === 0) continue;
+    if (dist > range || dist === 0) continue;
 
     const dot = (dx / dist) * forwardX + (dz / dist) * forwardZ;
     if (dot < MOB_ATTACK_FACING_DOT) continue;
@@ -1010,6 +1084,18 @@ function findAttackTargetMobId() {
   }
 
   return bestId;
+}
+
+/** Finds the nearest alive mob within attack range that's roughly in front of the player. */
+function findAttackTargetMobId() {
+  return findNearestMobInRange(MOB_ATTACK_RANGE);
+}
+
+/** Same idea as findAttackTargetMobId, but using this class's spell's own
+ * range (see server/spells.js) instead of the fixed melee range -- the
+ * mage's bolt reaches further than its melee attack does. */
+function findSpellTargetMobId() {
+  return findNearestMobInRange(local.spell?.range ?? MOB_ATTACK_RANGE);
 }
 
 function updateLocalAttack(dt) {
@@ -1033,6 +1119,37 @@ function updateLocalAttack(dt) {
     cooldownFillEl.style.width = `${(1 - local.attackCooldownRemaining / ATTACK_COOLDOWN) * 100}%`;
     cooldownFillEl.classList.toggle("ready", ready);
   }
+}
+
+/** Mirrors updateLocalAttack above, but for this class's single spell (see
+ * server/spells.js) -- its own cooldown clock (local.spellCooldownRemaining),
+ * its own key/touch-button input (spellCastInput), and its own level gate,
+ * all independent of the plain melee attack. The server re-validates level/
+ * cooldown/range authoritatively (a rejected cast comes back as
+ * "spellRejected"); this local gate just avoids firing a cast that's
+ * obviously not going to be accepted. */
+function updateLocalSpellCast(dt) {
+  if (local.spellCooldownRemaining > 0) {
+    local.spellCooldownRemaining = Math.max(0, local.spellCooldownRemaining - dt);
+  }
+
+  if (spellCastInput.requested) {
+    spellCastInput.requested = false;
+    if (
+      local.spell &&
+      local.mesh &&
+      local.alive &&
+      local.level >= local.spell.minLevel &&
+      local.spellCooldownRemaining <= 0
+    ) {
+      triggerSpellCast(local.mesh);
+      local.spellCooldownRemaining = local.spell.cooldownMs / 1000;
+      net?.sendSpellCast(findSpellTargetMobId());
+    }
+  }
+
+  if (local.mesh) updateSpellCast(local.mesh, dt);
+  updateSpellUI();
 }
 
 function maybeSendMove(now) {
@@ -1099,6 +1216,7 @@ function animate() {
   updateCameraOrbit(dt);
   updateLocalPlayer(dt);
   updateLocalAttack(dt);
+  updateLocalSpellCast(dt);
   updateInventoryToggle();
   updateQuestLogToggle();
   updatePartyToggle();
