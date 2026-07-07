@@ -10,7 +10,6 @@ reprioritized based on what's more fun to build/play.
 - [fix] create account, add account, and create character.  An account should be able to have multiple characters
 - [Add] NPC for quests
 - [Add] NPC for store, to buy items including spells
-- [Fix] enemies aka things like boars should attack once attacked.
 - [Add] Esc should bring up game menu.  Save, exit and whatnot.
 - [Enhancement] Upgrade the character graphics
 - [Enhancement] Upgrade in game graphics

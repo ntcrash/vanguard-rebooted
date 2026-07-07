@@ -9,6 +9,15 @@ import { resolveLogin } from "./accountStore.js";
 import { QUEST_DEFS, initQuestState, advanceKillQuests, advanceCollectQuests } from "./quests.js";
 import { PARTY_MAX_SIZE, createParty, isPartyFull, isPartyMember, isPartyLeader, addPartyMember, removePartyMember } from "./parties.js";
 import { computeVoicePairs, diffVoicePairs, splitPairKey } from "./voiceProximity.js";
+import {
+  acquireAggro,
+  dropAggro,
+  shouldDropAggro,
+  stepToward,
+  canMobAttack,
+  MOB_CHASE_SPEED,
+  MOB_AGGRO_ATTACK_INTERVAL_MS,
+} from "./mobAI.js";
 
 const PORT = process.env.PORT || 3000;
 const WORLD_BOUNDS = 170; // players are clamped to +/- this on X/Z
@@ -244,6 +253,11 @@ function spawnMobs() {
       alive: true,
       targetX: spawn.x,
       targetZ: spawn.z,
+      // Aggro state (see server/mobAI.js) — null/0 means "passively wandering".
+      // Set by acquireAggro() when a player lands a hit, cleared by
+      // dropAggro() once the mob gives up the chase or either side dies.
+      aggroTargetId: null,
+      nextAttackAt: 0,
     };
     pickWanderTarget(mob);
     mobs.set(mob.id, mob);
@@ -271,6 +285,7 @@ function respawnMob(mob) {
   mob.x = mob.homeX;
   mob.z = mob.homeZ;
   mob.rotY = 0;
+  dropAggro(mob); // a revived mob starts passive again, not still hunting whoever killed it
   pickWanderTarget(mob);
   io.emit("mobRespawned", {
     id: mob.id,
@@ -310,9 +325,50 @@ function respawnPlayer(player) {
   });
 }
 
+/** Applies a mob's attack (reusing MOB_COUNTER_DAMAGE, the same per-hit
+ * amount the old "counter-attack" chance used) to `target`, handling
+ * death/respawn the same way. Called both by the immediate-counter chance
+ * below and by an aggroed mob's chase-and-strike tick. */
+function strikePlayer(mob, target) {
+  if (!target.alive) return;
+  target.hp = Math.max(0, target.hp - MOB_COUNTER_DAMAGE);
+  if (target.hp <= 0) {
+    target.alive = false;
+    dropAggro(mob); // nothing left to chase once its target is down
+    io.emit("playerDied", { id: target.id, name: target.name, killedBy: mob.name });
+    setTimeout(() => respawnPlayer(target), PLAYER_RESPAWN_MS);
+  } else {
+    io.emit("playerDamaged", { id: target.id, hp: target.hp });
+  }
+}
+
 function tickMobs() {
+  const now = Date.now();
+
   for (const mob of mobs.values()) {
     if (!mob.alive) continue;
+
+    // A mob that's been struck chases its attacker instead of wandering
+    // (see server/mobAI.js) until it gives up, at which point it falls
+    // through to the normal wander logic below this run.
+    if (mob.aggroTargetId) {
+      const target = players.get(mob.aggroTargetId);
+      if (shouldDropAggro(mob, target)) {
+        dropAggro(mob);
+      } else {
+        const step = stepToward(mob.x, mob.z, target.x, target.z, MOB_CHASE_SPEED, MOB_TICK_MS / 1000);
+        mob.x = step.x;
+        mob.z = step.z;
+        mob.rotY = step.rotY;
+
+        const dist = Math.hypot(target.x - mob.x, target.z - mob.z);
+        if (dist <= MOB_ATTACK_RANGE && canMobAttack(mob, now)) {
+          mob.nextAttackAt = now + MOB_AGGRO_ATTACK_INTERVAL_MS;
+          strikePlayer(mob, target);
+        }
+        continue; // aggro'd mobs skip the wander step entirely this tick
+      }
+    }
 
     const dx = mob.targetX - mob.x;
     const dz = mob.targetZ - mob.z;
@@ -873,17 +929,17 @@ io.on("connection", (socket) => {
 
     io.emit("mobDamaged", { id: mob.id, hp: mob.hp });
 
-    // A mob that survives the hit has a chance to gore the attacker back —
-    // gives melee combat real risk and gives player respawn something to do.
+    // Being struck reliably turns the mob hostile toward its attacker (see
+    // server/mobAI.js) — it will now chase and periodically strike back
+    // every tick (tickMobs' aggro branch above) until it dies, the player
+    // dies, or the player flees beyond leash range of the mob's home, at
+    // which point it gives up and resumes wandering. This is on top of —
+    // not instead of — the immediate gore-back chance just below, so melee
+    // has risk from the very first hit, not just once the mob catches up.
+    acquireAggro(mob, p.id, now);
+
     if (p.alive && Math.random() < MOB_COUNTER_CHANCE) {
-      p.hp = Math.max(0, p.hp - MOB_COUNTER_DAMAGE);
-      if (p.hp <= 0) {
-        p.alive = false;
-        io.emit("playerDied", { id: p.id, name: p.name, killedBy: mob.name });
-        setTimeout(() => respawnPlayer(p), PLAYER_RESPAWN_MS);
-      } else {
-        io.emit("playerDamaged", { id: p.id, hp: p.hp });
-      }
+      strikePlayer(mob, p);
     }
   });
 
