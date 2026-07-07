@@ -6,6 +6,8 @@ real time, and chat with them. Built to be a small, hackable foundation rather t
 a full game.
 
 - **Client**: [Three.js](https://threejs.org/) (WebGL) + [Vite](https://vitejs.dev/), runs in the browser
+  — or as a native desktop app via the [Electron](https://www.electronjs.org/)
+  wrapper in `desktop/` (same client, no browser tab required)
 - **Server**: [Node.js](https://nodejs.org/) + [Express](https://expressjs.com/) + [Socket.io](https://socket.io/) for realtime state sync
 
 ## Features
@@ -128,6 +130,7 @@ Not included yet — see [ROADMAP.md](./ROADMAP.md).
 ```
 server/   Node + Socket.io realtime server (authoritative-ish player state)
 client/   Three.js + Vite browser client
+desktop/  Electron wrapper that packages client/ as a native desktop app
 ```
 
 ## Running it locally
@@ -167,6 +170,36 @@ VITE_SERVER_URL=http://192.168.1.23:3000
 ```
 
 Deploying this somewhere other players can reach it? See
+[DEPLOYMENT.md](./DEPLOYMENT.md).
+
+### 3. (Optional) Run it as a desktop app instead of a browser tab
+
+`desktop/` wraps the exact same client in [Electron](https://www.electronjs.org/)
+so it runs as a standalone window instead of a browser tab — no separate game
+logic to maintain, it just loads the client.
+
+For development (hot-reloading against the Vite dev server from step 2 above):
+
+```bash
+cd desktop
+npm install
+npm run dev
+```
+
+For a "production-like" run against a real built client:
+
+```bash
+cd client && npm run build && cd ..   # produces client/dist/
+cd desktop
+npm install
+npm start
+```
+
+`desktop/main.js` loads `client/dist/index.html` directly when
+`ELECTRON_START_URL` isn't set (that's what `npm run dev` sets, pointing at
+the Vite dev server; `npm start` leaves it unset). Which server the client
+connects to is still decided by `VITE_SERVER_URL` at `client` build time, the
+same as any other static host — see step 2 above and
 [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## Controls

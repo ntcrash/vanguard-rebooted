@@ -1,0 +1,14 @@
+{
+  "name": "vanguard-desktop",
+  "version": "0.6.0",
+  "private": true,
+  "description": "Native desktop wrapper (Electron) for the Vanguard Rebooted client -- the same client the browser plays, packaged as a standalone app instead of requiring a browser tab.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "ELECTRON_START_URL=http://localhost:5173 electron ."
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}
