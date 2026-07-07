@@ -10,6 +10,43 @@ tagged there.
 
 ### Added
 
+- In-game (environment) graphics upgrade: three additions to `client/src/world.js`
+  distinct from the earlier character-model visual work. (1) A shimmering pond
+  in the meadow (`POND_POSITION` = (65, 60), clear of every existing NPC/
+  pickup/mob spawn and short of the forest boundary) — a `ShaderMaterial`
+  water plane whose vertex shader displaces the surface via `pondWaveHeight(x,
+  z, time)`, a pure dual-sine function mirrored exactly in JS (same
+  "pure function kept in sync with GLSL" pattern `skyGradientMixFactor`
+  already established for the sky dome), with a soft foam-tinted rim via a
+  fragment-shader radial `discard`, ringed by 14 deterministically-placed
+  rocks and 10 reed clusters (`buildPondRim()`). (2) Fireflies: up to 45 small
+  glowing points scattered through the Whispering Forest interior, invisible
+  by day and fading in only once the existing day/night cycle's `nightFactor`
+  crosses a threshold (`fireflyOpacityForNightFactor()`), each one drifting on
+  its own lazy, deterministic wander path (`fireflyOffset()`, a per-seed
+  dual-sine drift — the same "no per-frame `Math.random()`" philosophy as
+  `torchFlicker()`) so the forest no longer goes visually dead at night next
+  to the meadow's moonlit sky/rain. (3) The meadow ground plane went from one
+  flat solid color to a subtle patchwork of grass tones baked as a per-vertex
+  `color` attribute (`applyGroundVertexColors()`, sampled from a deterministic
+  position hash `groundNoise()`/`groundPatchColor()` on a coarse 6-unit grid so
+  it reads as broad patches rather than speckle), read by the ground material's
+  new `vertexColors: true` mode. `main.js`'s `animate()` loop gained
+  `updatePond()`/`updateFireflies()` calls alongside the existing
+  `updateDayNight()`/`updateRain()`. Verified with a standalone Node script
+  (using the `three` package from `client/node_modules`) — 34 checks: every
+  pure function's determinism, value bounds, and time/seed-variation
+  (`groundNoise` in `[0,1)`, `groundPatchColor` same-cell consistency and
+  cross-cell variation, `pondWaveHeight` boundedness and time-dependence,
+  `fireflyOffset` boundedness/seed-distinctness/never-underground,
+  `fireflyOpacityForNightFactor` monotonicity and clamping at both ends) plus
+  a real `THREE.Scene` built via `buildWorld()` confirming the pond mesh,
+  fireflies `Points`, and the exact rim rock/reed counts all land in the scene
+  graph, the ground gained a matching-length vertex color attribute, and the
+  `updatePond`/`updateFireflies` wrappers correctly push time/nightFactor into
+  the shader uniform and particle positions — all passed, plus `node --check`
+  on both touched files and an HTML div-tag/CSS brace-balance spot-check
+  (unaffected, no markup was touched this run).
 - Character graphics upgrade: each class (Warrior/Paladin/Rogue/Mage) now has
   a visually distinct silhouette instead of everyone sharing the exact same
   primitive shape, layered on top of the existing capsule-torso mesh

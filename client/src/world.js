@@ -29,9 +29,14 @@ export function buildWorld(scene) {
 
   const rain = buildRain(scene);
 
+  const groundGeo = new THREE.PlaneGeometry(400, 400, 64, 64);
+  applyGroundVertexColors(groundGeo);
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(400, 400, 64, 64),
-    new THREE.MeshStandardMaterial({ color: 0x4a8a3d, roughness: 1 })
+    groundGeo,
+    // vertexColors reads the per-vertex patchwork applyGroundVertexColors()
+    // just baked in, instead of one flat solid color — the base color arg is
+    // dropped since vertexColors modulates from white, not from a tint.
+    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
@@ -46,8 +51,10 @@ export function buildWorld(scene) {
   scatterForest(scene);
   scatterGrass(scene);
   const torches = buildForestGateway(scene);
+  const pond = buildPond(scene);
+  const fireflies = buildFireflies(scene);
 
-  return { ground, torches, sky, sun, hemi, rain };
+  return { ground, torches, sky, sun, hemi, rain, pond, fireflies };
 }
 
 // A large inward-facing sphere with a vertical gradient shader standing in
@@ -493,4 +500,262 @@ function mulberry32(seed) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+// ---- Ground patchwork -------------------------------------------------------------
+//
+// The meadow ground used to be one flat MeshStandardMaterial color, which
+// reads as a plain colored void up close despite the grid overlay. Rather
+// than a texture/image (none is bundled with this project, and adding a new
+// binary asset is more machinery than this needs), the ground plane's own
+// PlaneGeometry(400, 400, 64, 64) already has plenty of vertices, so a
+// per-vertex color bake gives it broad, gentle color drift for free. A hash
+// of (x, z) — not Math.random() — keeps it deterministic across reloads,
+// same "pure function of position/time" testing philosophy as
+// skyGradientMixFactor/torchFlicker/generateGrassPositions above.
+
+// Classic GLSL-style hash-to-[0,1) noise, reimplemented in plain JS. Coarse
+// on purpose (see groundPatchColor's /6 downsample) so it reads as broad
+// patches of color, not per-vertex speckle.
+export function groundNoise(x, z) {
+  const s = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+const GROUND_DARK = [0x39 / 255, 0x70 / 255, 0x2f / 255];
+const GROUND_LIGHT = [0x5c / 255, 0x9e / 255, 0x46 / 255];
+
+// Blends between a darker and a lighter grass-green based on groundNoise(),
+// sampled on a coarse (divide-by-6) grid so neighboring vertices drift
+// smoothly rather than flickering vertex-to-vertex. Returns a plain [r,g,b]
+// in 0..1 (not a THREE.Color) so this stays testable without `three` loaded.
+export function groundPatchColor(x, z) {
+  const n = groundNoise(Math.floor(x / 6), Math.floor(z / 6));
+  return [
+    lerp(GROUND_DARK[0], GROUND_LIGHT[0], n),
+    lerp(GROUND_DARK[1], GROUND_LIGHT[1], n),
+    lerp(GROUND_DARK[2], GROUND_LIGHT[2], n),
+  ];
+}
+
+// THREE-aware wrapper: bakes a `color` vertex attribute onto the ground's
+// PlaneGeometry from groundPatchColor(), read by the ground's
+// `vertexColors: true` material. PlaneGeometry is authored in its own local
+// XY plane before buildWorld() rotates the mesh flat, so local (x, y) here
+// is what ends up as world (x, z) — only relative spacing matters for a
+// cosmetic patchwork like this, so that rotation isn't compensated for.
+function applyGroundVertexColors(geometry) {
+  const pos = geometry.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const [r, g, b] = groundPatchColor(pos.getX(i), pos.getY(i));
+    colors[i * 3] = r;
+    colors[i * 3 + 1] = g;
+    colors[i * 3 + 2] = b;
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+}
+
+// ---- Pond ---------------------------------------------------------------------
+//
+// A still-water pond feature in the meadow, placed clear of every existing
+// NPC/pickup/mob spawn point (checked against server/index.js's PICKUP_SPAWNS/
+// MOB_SPAWNS and server/store.js/questNpc.js's NPC positions — nearest
+// neighbor is the (40, 40) gold-coin pickup, well outside POND_RADIUS +
+// a comfortable buffer) and short of the z=90 forest boundary so it reads as
+// a meadow landmark, not a forest one.
+export const POND_POSITION = { x: 65, z: 60 };
+export const POND_RADIUS = 14;
+
+// Surface displacement for the pond's water plane, driven purely by
+// (x, z, time) so the vertex shader (GLSL, can't be unit-tested without a GL
+// context) and this JS function stay in exact sync — same pattern as
+// skyGradientMixFactor mirroring buildSky()'s fragment shader. Two sine
+// waves at different spatial frequencies/phases/speeds combine into a
+// gentle, non-repeating ripple rather than one obviously-radial pulse.
+export function pondWaveHeight(x, z, time) {
+  const a = Math.sin(x * 0.35 + time * 1.6) * 0.06;
+  const b = Math.sin(z * 0.45 - time * 1.1 + x * 0.15) * 0.05;
+  return a + b;
+}
+
+function buildPond(scene) {
+  const size = POND_RADIUS * 2.4;
+  const segs = 40;
+  const geo = new THREE.PlaneGeometry(size, size, segs, segs);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      time: { value: 0 },
+      radius: { value: POND_RADIUS },
+      deepColor: { value: new THREE.Color(0x0f4a5c) },
+      shallowColor: { value: new THREE.Color(0x3fa4c9) },
+    },
+    vertexShader: `
+      uniform float time;
+      varying vec2 vXz;
+      varying float vHeight;
+      void main() {
+        vXz = position.xy;
+        float h = sin(position.x * 0.35 + time * 1.6) * 0.06
+                + sin(position.y * 0.45 - time * 1.1 + position.x * 0.15) * 0.05;
+        vHeight = h;
+        vec3 displaced = position + vec3(0.0, 0.0, h);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float radius;
+      uniform vec3 deepColor;
+      uniform vec3 shallowColor;
+      varying vec2 vXz;
+      varying float vHeight;
+      void main() {
+        float dist = length(vXz);
+        if (dist > radius) discard;
+        float edge = smoothstep(radius - 1.5, radius, dist);
+        vec3 base = mix(deepColor, shallowColor, clamp(vHeight * 4.0 + 0.5, 0.0, 1.0));
+        vec3 color = mix(base, vec3(1.0), edge * 0.5); // pale foam near the rim
+        gl_FragColor = vec4(color, 0.92);
+      }
+    `,
+    transparent: true,
+    side: THREE.DoubleSide,
+  });
+  const water = new THREE.Mesh(geo, mat);
+  water.rotation.x = -Math.PI / 2;
+  water.position.set(POND_POSITION.x, 0.05, POND_POSITION.z);
+  scene.add(water);
+
+  buildPondRim(scene);
+
+  return { water };
+}
+
+// A ring of rocks plus a few reed clusters right at the pond's edge so the
+// circular water cutout (the fragment shader's `discard` above) reads as a
+// deliberate pond rather than a floating disc of water. Deterministic
+// placement, same mulberry32-seeded approach as scatterProps/scatterGrass.
+function buildPondRim(scene) {
+  const rockGeo = new THREE.DodecahedronGeometry(0.9, 0);
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x767a72, roughness: 0.95 });
+  const reedGeo = new THREE.ConeGeometry(0.05, 1.4, 5);
+  const reedMat = new THREE.MeshStandardMaterial({ color: 0x4a6b2f });
+
+  const rng = mulberry32(5566);
+  const rockCount = 14;
+  for (let i = 0; i < rockCount; i++) {
+    const angle = (i / rockCount) * Math.PI * 2 + rng() * 0.3;
+    const r = POND_RADIUS + 0.3 + rng() * 0.8;
+    const rock = new THREE.Mesh(rockGeo, rockMat);
+    rock.position.set(POND_POSITION.x + Math.cos(angle) * r, 0.35, POND_POSITION.z + Math.sin(angle) * r);
+    rock.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
+    rock.scale.setScalar(0.6 + rng() * 0.7);
+    rock.castShadow = true;
+    rock.receiveShadow = true;
+    scene.add(rock);
+  }
+
+  const reedClusters = 10;
+  for (let i = 0; i < reedClusters; i++) {
+    const angle = rng() * Math.PI * 2;
+    const r = POND_RADIUS - 0.5 + rng() * 1.5;
+    for (let j = 0; j < 3; j++) {
+      const reed = new THREE.Mesh(reedGeo, reedMat);
+      reed.position.set(
+        POND_POSITION.x + Math.cos(angle) * r + (rng() - 0.5) * 0.6,
+        0.7,
+        POND_POSITION.z + Math.sin(angle) * r + (rng() - 0.5) * 0.6
+      );
+      reed.scale.y = 0.8 + rng() * 0.6;
+      scene.add(reed);
+    }
+  }
+}
+
+// Called every frame from main.js to advance the pond's shimmer; the actual
+// wave math lives in pondWaveHeight() above (mirrored in the vertex shader)
+// so this just pushes the current clock time into the uniform the shader
+// reads each frame.
+export function updatePond(pond, elapsedSeconds) {
+  pond.water.material.uniforms.time.value = elapsedSeconds;
+}
+
+// ---- Fireflies ------------------------------------------------------------------
+//
+// Small glowing points that only become visible once night has meaningfully
+// fallen (gated on the existing day/night cycle's nightFactor, the same
+// value that already brightens the gateway torches), scattered through the
+// Whispering Forest interior (z > FOREST_ZONE_Z + a margin, matching
+// server/index.js's FOREST_ZONE_Z = 90) so the forest doesn't go visually
+// dead at night compared to the meadow's rain/moonlit sky.
+
+export const FIREFLY_COUNT = 45;
+const FIREFLY_ZONE_Z_MIN = 100;
+const FIREFLY_ZONE_Z_MAX = 170;
+const FIREFLY_ZONE_HALF_WIDTH = 85;
+
+// Per-firefly wander offset, a pure function of (time, seed) — dual
+// out-of-phase sines, same deterministic-drift technique as torchFlicker(),
+// so each firefly meanders independently without any per-frame
+// Math.random() call and stays unit-testable without a GL context.
+export function fireflyOffset(time, seed) {
+  const t = time + seed;
+  return {
+    dx: Math.sin(t * 0.6) * 2.2 + Math.sin(t * 1.7 + 1.3) * 0.8,
+    dy: 0.9 + Math.sin(t * 0.9 + 2.1) * 0.45,
+    dz: Math.cos(t * 0.5 + 0.7) * 2.2,
+  };
+}
+
+// Maps the day/night cycle's 0..1 nightFactor to a firefly opacity: fully
+// invisible through dusk, fading in only once it's genuinely dark, capped
+// below fully opaque so they read as a soft glow rather than solid dots.
+// Pure and testable on its own, same reasoning as splitting groundPatchColor
+// out from applyGroundVertexColors.
+export function fireflyOpacityForNightFactor(nightFactor) {
+  return Math.max(0, Math.min(1, (nightFactor - 0.35) / 0.65)) * 0.9;
+}
+
+function buildFireflies(scene) {
+  const rng = mulberry32(24601);
+  const homes = [];
+  const positions = new Float32Array(FIREFLY_COUNT * 3);
+  for (let i = 0; i < FIREFLY_COUNT; i++) {
+    const x = (rng() - 0.5) * 2 * FIREFLY_ZONE_HALF_WIDTH;
+    const z = FIREFLY_ZONE_Z_MIN + rng() * (FIREFLY_ZONE_Z_MAX - FIREFLY_ZONE_Z_MIN);
+    const seed = rng() * 1000;
+    homes.push({ x, z, seed });
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = 1;
+    positions[i * 3 + 2] = z;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const material = new THREE.PointsMaterial({
+    color: 0xccff66,
+    size: 0.3,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    fog: false,
+  });
+  const points = new THREE.Points(geometry, material);
+  points.frustumCulled = false; // scattered across the whole forest depth, same reasoning as the rain cloud
+  scene.add(points);
+
+  return { points, homes };
+}
+
+// Called every frame from main.js. Fades fireflies in/out with the day/night
+// cycle's nightFactor and advances each one's lazy drift via fireflyOffset().
+export function updateFireflies(fireflies, elapsedSeconds, nightFactor) {
+  fireflies.points.material.opacity = fireflyOpacityForNightFactor(nightFactor);
+  const positions = fireflies.points.geometry.attributes.position;
+  for (let i = 0; i < fireflies.homes.length; i++) {
+    const home = fireflies.homes[i];
+    const off = fireflyOffset(elapsedSeconds, home.seed);
+    positions.setXYZ(i, home.x + off.dx, off.dy, home.z + off.dz);
+  }
+  positions.needsUpdate = true;
 }
