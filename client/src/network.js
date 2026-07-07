@@ -79,6 +79,10 @@ export function connectToServer(handlers, character) {
   socket.on("voicePeerLeave", (data) => handlers.onVoicePeerLeave?.(data));
   socket.on("voiceSignal", (data) => handlers.onVoiceSignal?.(data));
   socket.on("playerMicState", (data) => handlers.onPlayerMicState?.(data));
+  // Esc menu's explicit "Save Game" button: confirms the server persisted
+  // this player's record right now, rather than waiting on the periodic
+  // autosave/save-on-disconnect to eventually catch up.
+  socket.on("saveComplete", (data) => handlers.onSaveComplete?.(data));
 
   return {
     sendMove(x, y, z, rotY) {
@@ -113,6 +117,9 @@ export function connectToServer(handlers, character) {
     },
     sendMicState(on) {
       socket.emit("voiceMicState", !!on);
+    },
+    requestSave() {
+      socket.emit("requestSave");
     },
     raw: socket,
   };

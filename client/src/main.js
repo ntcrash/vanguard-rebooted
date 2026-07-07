@@ -19,6 +19,7 @@ import {
   questLogToggle,
   partyToggle,
   micToggle,
+  menuToggle,
 } from "./input.js";
 import { connectToServer } from "./network.js";
 import { initChat } from "./chat.js";
@@ -51,6 +52,12 @@ const partyInviteAcceptBtnEl = document.getElementById("party-invite-accept-btn"
 const partyInviteDeclineBtnEl = document.getElementById("party-invite-decline-btn");
 const micToggleBtnEl = document.getElementById("mic-toggle-btn");
 const touchMicBtnEl = document.getElementById("touch-mic-btn");
+const gameMenuPanelEl = document.getElementById("game-menu-panel");
+const gameMenuResumeBtnEl = document.getElementById("game-menu-resume-btn");
+const gameMenuSaveBtnEl = document.getElementById("game-menu-save-btn");
+const gameMenuSaveStatusEl = document.getElementById("game-menu-save-status");
+const gameMenuExitBtnEl = document.getElementById("game-menu-exit-btn");
+let saveStatusClearTimer = null;
 
 const ATTACK_COOLDOWN = 0.6; // seconds between local attacks
 const SPRINT_MULTIPLIER = 1.8; // hold Shift (input.js's keys.sprint) to move+animate this much faster
@@ -127,6 +134,7 @@ const damageNumbers = new DamageNumbers(labelsEl);
 let inventoryOpen = false;
 let questLogOpen = false;
 let partyOpen = false;
+let menuOpen = false;
 // The single incoming party invite (if any) this client is currently showing
 // an Accept/Decline popup for -- mirrors pendingPartyInvites' "at most one
 // outstanding invite per player" rule on the server (server/index.js).
@@ -256,6 +264,20 @@ function updateMicToggle() {
     micToggleBtnEl.classList.toggle("active", micOn);
   }
   if (touchMicBtnEl) touchMicBtnEl.classList.toggle("active", micOn);
+}
+
+/** Opens/closes the Esc game menu (Resume/Save Game/Exit to Login) -- same
+ * edge-triggered "requested" flag pattern as the other panel toggles above. */
+function updateMenuToggle() {
+  if (!menuToggle.requested) return;
+  menuToggle.requested = false;
+  menuOpen = !menuOpen;
+  if (gameMenuPanelEl) gameMenuPanelEl.classList.toggle("hidden", !menuOpen);
+}
+
+function closeGameMenu() {
+  menuOpen = false;
+  if (gameMenuPanelEl) gameMenuPanelEl.classList.add("hidden");
 }
 
 /** Shows the Accept/Decline popup for an incoming party invite, replacing
@@ -707,6 +729,19 @@ function startGame(character) {
       if (data.id === local.id) return; // our own mic state is driven locally by updateMicToggle(), not this broadcast
       setPlayerMicState(data.id, data.micOn);
     },
+
+    // Esc menu's "Save Game" button -- confirms the server actually
+    // persisted this player's record just now (see server/index.js's
+    // "requestSave" handler), rather than the player just trusting an
+    // invisible background autosave.
+    onSaveComplete: () => {
+      if (!gameMenuSaveStatusEl) return;
+      gameMenuSaveStatusEl.textContent = "Saved!";
+      clearTimeout(saveStatusClearTimer);
+      saveStatusClearTimer = setTimeout(() => {
+        gameMenuSaveStatusEl.textContent = "";
+      }, 2000);
+    },
   }, character);
 }
 
@@ -756,6 +791,33 @@ if (partyInviteDeclineBtnEl) {
 if (micToggleBtnEl) {
   micToggleBtnEl.addEventListener("click", () => {
     micToggle.requested = true;
+  });
+}
+
+// ---- Esc game menu wiring (Resume / Save Game / Exit to Login) --------------------
+
+if (gameMenuResumeBtnEl) {
+  gameMenuResumeBtnEl.addEventListener("click", () => closeGameMenu());
+}
+
+if (gameMenuSaveBtnEl) {
+  gameMenuSaveBtnEl.addEventListener("click", () => {
+    if (!net) return;
+    net.requestSave();
+    if (gameMenuSaveStatusEl) gameMenuSaveStatusEl.textContent = "Saving…";
+  });
+}
+
+if (gameMenuExitBtnEl) {
+  gameMenuExitBtnEl.addEventListener("click", () => {
+    // A full page reload is the simplest reliable way back to a clean login
+    // screen -- it avoids having to hand-write teardown for the entire
+    // scene/socket/UI state (meshes, remote players, mobs, pickups, chat
+    // log, panels, voice peers, etc.) that only ever gets built up, never
+    // torn down, elsewhere in this file. The server's own "disconnect"
+    // handler already saves this player's record before the socket closes.
+    net?.raw.disconnect();
+    window.location.reload();
   });
 }
 
@@ -1028,6 +1090,7 @@ function animate() {
   updateQuestLogToggle();
   updatePartyToggle();
   updateMicToggle();
+  updateMenuToggle();
   updateZoneLabel();
   if (partyOpen) renderPartyPanel(); // keeps roster hp bars live, see renderPartyPanel()'s comment
 

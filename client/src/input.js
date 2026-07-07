@@ -31,6 +31,11 @@ export const partyToggle = { requested: false };
 // consumed for a frame.
 export const micToggle = { requested: false };
 
+// Edge-triggered Esc game-menu-panel toggle (Resume/Save/Exit): set true on
+// the Escape keybind/touch button, and cleared by main.js once it's been
+// consumed for a frame. Same pattern as the other panel toggles above.
+export const menuToggle = { requested: false };
+
 // Converts a raw pointer-drag delta (dx, dy in screen px) into camera
 // azimuth/elevation deltas. Pure/exported so the sign convention can be unit
 // tested without a browser. Vertical (elevation) matches the conventional
@@ -125,6 +130,10 @@ export function initInput(canvas) {
       e.preventDefault();
       micToggle.requested = true;
     }
+    if (e.code === "Escape") {
+      e.preventDefault();
+      menuToggle.requested = true;
+    }
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
       keys.sprint = true;
     }
@@ -198,6 +207,7 @@ function setupTouchControls(canvas) {
   const questBtn = document.getElementById("touch-quest-btn");
   const partyBtn = document.getElementById("touch-party-btn");
   const micBtn = document.getElementById("touch-mic-btn");
+  const menuBtn = document.getElementById("touch-menu-btn");
 
   let joystickTouchId = null;
   let joystickCenterX = 0;
@@ -314,6 +324,17 @@ function setupTouchControls(canvas) {
       (e) => {
         e.preventDefault();
         micToggle.requested = true;
+      },
+      { passive: false }
+    );
+  }
+
+  if (menuBtn) {
+    menuBtn.addEventListener(
+      "touchstart",
+      (e) => {
+        e.preventDefault();
+        menuToggle.requested = true;
       },
       { passive: false }
     );

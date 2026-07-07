@@ -8,6 +8,19 @@ tagged there.
 
 ## [Unreleased]
 
+### Added
+
+- Esc game menu: pressing `Esc` (or tapping the new ☰ touch button) opens a
+  centered Resume / Save Game / Exit to Login menu, mirroring the toggle
+  pattern already used by the inventory/quest/party panels. "Save Game" asks
+  the server to persist your record immediately (new `requestSave` socket
+  event in `server/index.js`, confirmed back via `saveComplete`) instead of
+  waiting on the periodic autosave or a disconnect; "Exit to Login" disconnects
+  cleanly and reloads the page back to the login screen, since the server
+  already saves on disconnect and a full reload is simpler and more reliable
+  than hand-writing teardown for the entire scene/socket/UI state built up
+  over a session.
+
 ### Fixed
 
 - Mobs now actually fight back: landing a hit on a boar/wolf makes it

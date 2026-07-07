@@ -85,6 +85,9 @@ a full game.
   live WebRTC connection — no call/invite step, it just connects as you walk
   into range and disconnects as you walk out. A small 🎤 icon on a
   nameplate shows who currently has their mic on
+- Esc game menu: `Esc` (or the ☰ touch button) opens a Resume / Save Game /
+  Exit to Login menu. "Save Game" persists your progress immediately and
+  confirms it; "Exit to Login" disconnects and returns you to the login screen
 
 Accounts are stored alongside player saves in `server/data/accounts.json`
 (gitignored, password hashes only — never plaintext).
@@ -151,11 +154,11 @@ Deploying this somewhere other players can reach it? See
 | `P`                     | Toggle party panel                |
 | `V`                     | Toggle mic (proximity voice chat) |
 | `Enter`                 | Focus chat box / send message    |
-| `Esc`                   | Clear & unfocus chat box          |
+| `Esc`                   | Clear & unfocus chat box (while chatting); otherwise open the game menu |
 
 On a touchscreen, a virtual joystick (bottom-left) replaces WASD, and a
-Sprint/Attack/Inventory/Quest Log/Party/Mic button stack (bottom-right)
-replaces `Shift`/click-or-`F`/`I`/`L`/`P`/`V`. Dragging a finger anywhere
+Sprint/Attack/Inventory/Quest Log/Party/Mic/Menu button stack (bottom-right)
+replaces `Shift`/click-or-`F`/`I`/`L`/`P`/`V`/`Esc`. Dragging a finger anywhere
 else on the scene orbits the camera, same as a mouse drag.
 
 ## Development notes
