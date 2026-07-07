@@ -1,6 +1,6 @@
 {
   "name": "vanguard-client",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "description": "3D browser client for Vanguard Rebooted (WoW-style multiplayer prototype)",
   "type": "module",
   "scripts": {
